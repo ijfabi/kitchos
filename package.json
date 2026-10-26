@@ -1,0 +1,37 @@
+{
+  "name": "kitchos",
+  "private": true,
+  "description": "KitchOS — The Intelligent Restaurant Operating System. Order. Operate. Optimise.",
+  "type": "module",
+  "packageManager": "pnpm@10.34.7",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "turbo run test",
+    "test:unit": "turbo run test:unit",
+    "test:integration": "turbo run test:integration",
+    "db:up": "docker compose -f infrastructure/docker/compose.yaml up -d --wait",
+    "db:down": "docker compose -f infrastructure/docker/compose.yaml down",
+    "db:migrate": "pnpm --filter @kitchos/database migrate",
+    "db:seed": "pnpm --filter @kitchos/database seed",
+    "db:reset": "pnpm --filter @kitchos/database reset",
+    "dev": "turbo run dev --parallel"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "26.6.5",
+    "eslint": "10.13.0",
+    "globals": "17.13.0",
+    "prettier": "3.9.10",
+    "turbo": "2.11.10",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.72.0",
+    "vitest": "5.0.5"
+  }
+}

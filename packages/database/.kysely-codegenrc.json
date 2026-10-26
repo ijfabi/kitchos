@@ -1,0 +1,8 @@
+{
+  "dialect": "postgres",
+  "outFile": "src/generated/db.ts",
+  "excludePattern": "app.*",
+  "numericParser": "string",
+  "dateParser": "string",
+  "typeMapping": { "int8": "ColumnType<number, number | bigint, number | bigint>" }
+}

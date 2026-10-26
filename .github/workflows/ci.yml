@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Lint, format, typecheck, unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm format:check
+      - run: pnpm typecheck
+      - run: pnpm --filter @kitchos/domain test
+
+  integration:
+    name: API integration tests (Testcontainers PostgreSQL 18)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @kitchos/api test
+
+  schema-drift:
+    name: Generated DB types match migrations
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_DB: kitchos
+          POSTGRES_USER: kitchos_owner
+          POSTGRES_PASSWORD: ci_owner
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U kitchos_owner -d kitchos" --health-interval 2s --health-retries 30
+    env:
+      DATABASE_OWNER_URL: postgres://kitchos_owner:ci_owner@localhost:5432/kitchos
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: psql "$DATABASE_OWNER_URL" -c "CREATE ROLE kitchos_app LOGIN PASSWORD 'ci_app' NOBYPASSRLS"
+      - run: pnpm db:migrate
+      - run: pnpm --filter @kitchos/database codegen
+      - run: npx prettier --write packages/database/src/generated/db.ts
+      - run: git diff --exit-code packages/database/src/generated/db.ts
+
+  audit:
+    name: Dependency audit (informational)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: pnpm audit --prod

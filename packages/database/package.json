@@ -1,0 +1,28 @@
+{
+  "name": "@kitchos/database",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./seed": "./src/seed/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "migrate": "tsx --env-file-if-exists=../../.env src/cli.ts migrate",
+    "seed": "tsx --env-file-if-exists=../../.env src/cli.ts seed",
+    "reset": "tsx --env-file-if-exists=../../.env src/cli.ts reset",
+    "codegen": "tsx --env-file-if-exists=../../.env src/codegen.ts"
+  },
+  "dependencies": {
+    "@kitchos/domain": "workspace:*",
+    "@node-rs/argon2": "2.2.2",
+    "kysely": "0.29.7",
+    "pg": "8.23.1"
+  },
+  "devDependencies": {
+    "@types/pg": "8.23.1",
+    "kysely-codegen": "0.20.0",
+    "tsx": "4.23.15"
+  }
+}
