@@ -8,3 +8,6 @@ ignoredBuiltDependencies:
   - cpu-features
   - protobufjs
   - ssh2
+overrides:
+  # GHSA-q7qp-rjg7-q26m: @nestjs/platform-express pins multer 2.4.0. Drop once Nest updates.
+  multer: 2.5.0
