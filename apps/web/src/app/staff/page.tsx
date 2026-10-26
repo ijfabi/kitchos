@@ -2,7 +2,7 @@
 
 import type { LoginResponse } from '@kitchos/contracts';
 import { useMutation } from '@tanstack/react-query';
-import { ChefHat, ClipboardCheck, LogOut } from 'lucide-react';
+import { ChefHat, ClipboardCheck, LogOut, ShoppingCart } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
 import { Badge, Button, Card, Logo, Spinner } from '@/components/ui';
@@ -113,6 +113,14 @@ function Workspaces() {
                 </div>
               </div>
               <div className="mt-4 flex flex-wrap gap-2">
+                {r.permissions.includes('orders.create') && (
+                  <Link
+                    href={`/pos/${r.id}`}
+                    className="inline-flex h-11 items-center gap-2 rounded-lg bg-brand px-4 text-sm font-semibold text-white hover:bg-brand-strong"
+                  >
+                    <ShoppingCart className="size-4" aria-hidden /> Point of sale
+                  </Link>
+                )}
                 {r.permissions.includes('kitchen.view') && (
                   <Link
                     href={`/kitchen/${r.id}`}

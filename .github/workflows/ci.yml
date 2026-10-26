@@ -85,3 +85,44 @@ jobs:
         with:
           node-version: 24
       - run: pnpm audit --prod
+
+  e2e:
+    name: Playwright journeys (real UI, API and PostgreSQL)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_DB: kitchos
+          POSTGRES_USER: kitchos_owner
+          POSTGRES_PASSWORD: ci_owner
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U kitchos_owner -d kitchos" --health-interval 2s --health-retries 30
+    env:
+      DATABASE_OWNER_URL: postgres://kitchos_owner:ci_owner@localhost:5432/kitchos
+      DATABASE_URL: postgres://kitchos_app:ci_app@localhost:5432/kitchos
+      AUTH_JWT_SECRET: ci-only-secret-at-least-32-characters-long
+      CORS_ORIGINS: http://localhost:3100
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: psql "$DATABASE_OWNER_URL" -c "CREATE ROLE kitchos_app LOGIN PASSWORD 'ci_app' NOBYPASSRLS"
+      - run: pnpm db:migrate && pnpm db:seed
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm test:e2e
+      - if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7

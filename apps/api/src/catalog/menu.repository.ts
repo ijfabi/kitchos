@@ -23,6 +23,7 @@ export interface RestaurantConfig {
   taxRateBp: number;
   shortagePolicy: 'block' | 'allow_negative';
   openingHours: Record<string, [string, string]>;
+  cashRoundingIncrementCents: number;
 }
 
 export interface LoadedMenu {
@@ -66,6 +67,7 @@ export class MenuRepository {
       taxRateBp: r.tax_rate_bp,
       shortagePolicy: r.stock_shortage_policy as RestaurantConfig['shortagePolicy'],
       openingHours: r.opening_hours as Record<string, [string, string]>,
+      cashRoundingIncrementCents: r.cash_rounding_increment_cents,
     };
   }
 

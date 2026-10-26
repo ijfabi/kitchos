@@ -37,6 +37,7 @@ export class CatalogController {
         timezone: menu.restaurant.timezone,
         currency: menu.restaurant.currency,
         openingHours: menu.restaurant.openingHours,
+        cashRoundingIncrementCents: menu.restaurant.cashRoundingIncrementCents,
       },
       menuVersionId: menu.catalog.menuVersionId,
       items: menu.items,

@@ -2,14 +2,25 @@ import {
   Body,
   Controller,
   Get,
+  Headers,
   HttpCode,
   Inject,
   Param,
   Post,
   Query,
+  Res,
   UseGuards,
 } from '@nestjs/common';
-import { CancelOrderRequestSchema, OrderStatusSchema, type OrderView } from '@kitchos/contracts';
+import {
+  CancelOrderRequestSchema,
+  OrderChannelSchema,
+  OrderStatusSchema,
+  StaffCreateOrderRequestSchema,
+  StaffPaymentRequestSchema,
+  type OrderView,
+  type StaffPaymentRequest,
+} from '@kitchos/contracts';
+import type { Response } from 'express';
 import { z } from 'zod';
 import {
   CurrentPermissions,
@@ -19,6 +30,7 @@ import {
 } from '../auth/auth.guard.ts';
 import type { StaffPrincipal } from '../auth/auth.service.ts';
 import type { Permission } from '../auth/permissions.ts';
+import { requireIdempotencyKey } from '../infra/idempotency.ts';
 import { UuidParam, ZodPipe } from '../infra/zod.ts';
 import { OrdersService } from './orders.service.ts';
 
@@ -28,6 +40,7 @@ const ListQuery = z.object({
     .default('accepted,in_preparation,ready')
     .transform((s) => s.split(','))
     .pipe(z.array(OrderStatusSchema).min(1)),
+  channel: OrderChannelSchema.optional(),
   limit: z.coerce.number().int().min(1).max(200).default(50),
 });
 
@@ -47,8 +60,59 @@ export class StaffOrdersController {
       orgId: p.orgId,
       restaurantId,
       statuses: query.status,
+      channel: query.channel,
       limit: query.limit,
     });
+  }
+
+  /** POS / drive-thru order entry. Priced on the server; leaving it unpaid parks it. */
+  @Post()
+  @RequirePermission('orders.create')
+  async create(
+    @Param('restaurantId', UuidParam) restaurantId: string,
+    @Body(new ZodPipe(StaffCreateOrderRequestSchema))
+    body: z.output<typeof StaffCreateOrderRequestSchema>,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Principal() p: StaffPrincipal,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<OrderView> {
+    const key = requireIdempotencyKey(idempotencyKey);
+    const result = await this.orders.placeOrder(
+      {
+        orgId: p.orgId,
+        restaurantId,
+        channel: body.channel,
+        fulfilmentType: body.fulfilmentType,
+        customerName: body.customerName,
+        lines: body.lines,
+        actor: { userId: p.userId },
+      },
+      key,
+    );
+    res.status(result.status);
+    if (result.replayed) res.setHeader('Idempotent-Replayed', 'true');
+    return result.body;
+  }
+
+  /** Take payment at a terminal: cash (with tendered amount) or a sandbox card token. */
+  @Post(':orderId/payments')
+  @RequirePermission('orders.create')
+  async pay(
+    @Param('restaurantId', UuidParam) restaurantId: string,
+    @Param('orderId', UuidParam) orderId: string,
+    @Body(new ZodPipe(StaffPaymentRequestSchema)) body: StaffPaymentRequest,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Principal() p: StaffPrincipal,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<OrderView> {
+    const key = requireIdempotencyKey(idempotencyKey);
+    const result = await this.orders.takePayment(
+      { orgId: p.orgId, orderId, restaurantId, tender: body, actor: { userId: p.userId } },
+      key,
+    );
+    res.status(result.status);
+    if (result.replayed) res.setHeader('Idempotent-Replayed', 'true');
+    return result.body;
   }
 
   @Get(':orderId')

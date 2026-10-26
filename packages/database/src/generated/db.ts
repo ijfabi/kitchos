@@ -292,6 +292,8 @@ export interface Payments {
   captured_at: Timestamp | null;
   card_brand: string | null;
   card_last4: string | null;
+  cash_rounding_cents: Generated<ColumnType<number, number | bigint, number | bigint>>;
+  change_cents: ColumnType<number, number | bigint, number | bigint> | null;
   created_at: Generated<Timestamp>;
   failure_reason: string | null;
   id: Generated<string>;
@@ -300,8 +302,10 @@ export interface Payments {
   org_id: string;
   provider: string;
   provider_reference: string | null;
+  received_by: string | null;
   restaurant_id: string;
   status: string;
+  tendered_cents: ColumnType<number, number | bigint, number | bigint> | null;
   version: Generated<number>;
 }
 
@@ -381,6 +385,7 @@ export interface Restaurants {
   address: string | null;
   brand_id: string;
   business_day_cutoff: Generated<string>;
+  cash_rounding_increment_cents: Generated<number>;
   count_approval_threshold_cents: Generated<ColumnType<number, number | bigint, number | bigint>>;
   created_at: Generated<Timestamp>;
   currency: Generated<string>;

@@ -1,13 +1,15 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { withTenant, type Database, type Tx } from '@kitchos/database';
-import type { OrderLineInput, OrderView } from '@kitchos/contracts';
+import type { OrderLineInput, OrderView, StaffPaymentRequest } from '@kitchos/contracts';
 import {
   DomainError,
   formatDecimalQty,
   orderStateMachine,
   paymentStateMachine,
   priceOrder,
+  cashPayableCents,
   productionUnits,
+  settleCash,
   type OrderStatus,
   type PricedOrder,
   type ProductionSpec,
@@ -312,45 +314,108 @@ export class OrdersService {
 
   // ------------------------------------------------------------- pay + accept
 
+  /** Guest checkout: card tokens only (cash is never accepted from the public internet). */
   async payWithCard(
     args: { orgId: string; orderId: string; paymentToken: string; actor: Actor },
+    idempotencyKey: string,
+  ): Promise<IdempotentResult<OrderView>> {
+    return this.takePayment(
+      { ...args, tender: { method: 'card', paymentToken: args.paymentToken }, includeToken: true },
+      idempotencyKey,
+    );
+  }
+
+  /**
+   * Takes payment for a pending order: a sandbox card token, or cash with the
+   * amount tendered. Cash is rounded to the restaurant's increment (5c in
+   * Australia) and the difference is recorded on the payment, not the order.
+   * A declined card leaves the order awaiting payment (HTTP 402 body).
+   */
+  async takePayment(
+    args: {
+      orgId: string;
+      orderId: string;
+      /** When set (staff terminals), the order must belong to this restaurant. */
+      restaurantId?: string;
+      tender: StaffPaymentRequest;
+      actor: Actor;
+      includeToken?: boolean;
+    },
     idempotencyKey: string,
   ): Promise<IdempotentResult<OrderView>> {
     return withTenant(this.db, { orgId: args.orgId }, (tx) =>
       idempotent(
         tx,
         args.orgId,
-        `orders.pay:${args.orderId}`,
+        // Scope by surface and restaurant: a stored response is replayed
+        // before the order is re-checked, so a key validated at one
+        // restaurant must never be replayable through another (or the public route).
+        args.restaurantId
+          ? `orders.pay:staff:${args.restaurantId}:${args.orderId}`
+          : `orders.pay:public:${args.orderId}`,
         idempotencyKey,
-        { paymentToken: args.paymentToken },
+        args.tender,
         async () => {
-          const order = await this.lockOrder(tx, args.orderId);
+          const order = await this.lockOrder(tx, args.orderId, args.restaurantId);
           if (order.status !== 'pending_payment') {
             throw new ApiException(409, 'ORDER_NOT_AWAITING_PAYMENT', `Order is ${order.status}`);
           }
-          const sandbox = SANDBOX_TOKENS[args.paymentToken];
-          if (!sandbox)
-            throw new ApiException(422, 'PAYMENT_TOKEN_INVALID', 'Unknown payment token');
+          const viewOpts = { includeToken: args.includeToken ?? false };
+          const base = {
+            org_id: args.orgId,
+            restaurant_id: order.restaurant_id,
+            order_id: order.id,
+            amount_cents: order.total_cents,
+            received_by: args.actor.userId ?? null,
+          };
 
-          paymentStateMachine.assertTransition('pending', sandbox.outcome);
-          const payment = await tx
-            .insertInto('payments')
-            .values({
-              org_id: args.orgId,
-              restaurant_id: order.restaurant_id,
-              order_id: order.id,
-              method: 'card',
-              provider: 'sandbox',
-              status: sandbox.outcome,
-              amount_cents: order.total_cents,
-              provider_reference: `sbx_${crypto.randomUUID()}`,
-              card_brand: sandbox.brand,
-              card_last4: sandbox.last4,
-              failure_reason: sandbox.reason ?? null,
-              captured_at: sandbox.outcome === 'captured' ? sql<Date>`now()` : null,
-            })
-            .returning(['id', 'version'])
-            .executeTakeFirstOrThrow();
+          let payment: { id: string; version: number };
+          let outcome: 'captured' | 'failed';
+          if (args.tender.method === 'cash') {
+            const { cash_rounding_increment_cents: increment } = await tx
+              .selectFrom('restaurants')
+              .select('cash_rounding_increment_cents')
+              .where('id', '=', order.restaurant_id)
+              .executeTakeFirstOrThrow();
+            const cash = settleCash(order.total_cents, args.tender.tenderedCents, increment);
+            outcome = 'captured';
+            paymentStateMachine.assertTransition('pending', outcome);
+            payment = await tx
+              .insertInto('payments')
+              .values({
+                ...base,
+                method: 'cash',
+                provider: 'cash',
+                status: outcome,
+                tendered_cents: cash.tenderedCents,
+                change_cents: cash.changeCents,
+                cash_rounding_cents: cash.roundingCents,
+                captured_at: sql<Date>`now()`,
+              })
+              .returning(['id', 'version'])
+              .executeTakeFirstOrThrow();
+          } else {
+            const sandbox = SANDBOX_TOKENS[args.tender.paymentToken];
+            if (!sandbox)
+              throw new ApiException(422, 'PAYMENT_TOKEN_INVALID', 'Unknown payment token');
+            outcome = sandbox.outcome;
+            paymentStateMachine.assertTransition('pending', outcome);
+            payment = await tx
+              .insertInto('payments')
+              .values({
+                ...base,
+                method: 'card',
+                provider: 'sandbox',
+                status: outcome,
+                provider_reference: `sbx_${crypto.randomUUID()}`,
+                card_brand: sandbox.brand,
+                card_last4: sandbox.last4,
+                failure_reason: sandbox.reason ?? null,
+                captured_at: outcome === 'captured' ? sql<Date>`now()` : null,
+              })
+              .returning(['id', 'version'])
+              .executeTakeFirstOrThrow();
+          }
 
           const paymentEvent: DomainEventInput = {
             orgId: args.orgId,
@@ -358,17 +423,18 @@ export class OrdersService {
             aggregateType: 'payment',
             aggregateId: payment.id,
             aggregateVersion: payment.version,
-            eventType: sandbox.outcome === 'captured' ? 'payment.captured' : 'payment.failed',
+            eventType: outcome === 'captured' ? 'payment.captured' : 'payment.failed',
             payload: {
               orderId: order.id,
               amountCents: order.total_cents,
-              method: 'card',
-              provider: 'sandbox',
+              method: args.tender.method,
+              provider: args.tender.method === 'cash' ? 'cash' : 'sandbox',
+              receivedBy: args.actor.userId ?? null,
             },
           };
-          if (sandbox.outcome === 'failed') {
+          if (outcome === 'failed') {
             await appendEvents(tx, [paymentEvent]);
-            return { status: 402, body: await this.view(tx, order.id, { includeToken: true }) };
+            return { status: 402, body: await this.view(tx, order.id, viewOpts) };
           }
           const events = await this.accept(tx, {
             orgId: args.orgId,
@@ -378,7 +444,7 @@ export class OrdersService {
             actor: args.actor,
           });
           await appendEvents(tx, [paymentEvent, ...events]);
-          return { status: 200, body: await this.view(tx, order.id, { includeToken: true }) };
+          return { status: 200, body: await this.view(tx, order.id, viewOpts) };
         },
       ),
     );
@@ -612,17 +678,19 @@ export class OrdersService {
     orgId: string;
     restaurantId: string;
     statuses: OrderStatus[];
+    channel?: string | undefined;
     limit: number;
   }): Promise<OrderView[]> {
     return withTenant(this.db, args, async (tx) => {
-      const ids = await tx
+      let q = tx
         .selectFrom('orders')
         .select('id')
         .where('restaurant_id', '=', args.restaurantId)
         .where('status', 'in', args.statuses)
         .orderBy('placed_at', 'desc')
-        .limit(args.limit)
-        .execute();
+        .limit(args.limit);
+      if (args.channel) q = q.where('channel', '=', args.channel);
+      const ids = await q.execute();
       const views: OrderView[] = [];
       for (const { id } of ids) views.push(await this.view(tx, id));
       return views;
@@ -645,7 +713,7 @@ export class OrdersService {
       .selectFrom('orders as o')
       .innerJoin('restaurants as r', 'r.id', 'o.restaurant_id')
       .selectAll('o')
-      .select('r.name as restaurant_name')
+      .select(['r.name as restaurant_name', 'r.cash_rounding_increment_cents'])
       .where('o.id', '=', orderId)
       .executeTakeFirstOrThrow();
     const lines = await tx
@@ -672,7 +740,17 @@ export class OrdersService {
         .map((m) => ({ name: m.name, priceDeltaCents: m.price_delta_cents }));
     const payment = await tx
       .selectFrom('payments')
-      .select(['status', 'method', 'amount_cents', 'card_brand', 'card_last4', 'failure_reason'])
+      .select([
+        'status',
+        'method',
+        'amount_cents',
+        'card_brand',
+        'card_last4',
+        'failure_reason',
+        'tendered_cents',
+        'change_cents',
+        'cash_rounding_cents',
+      ])
       .where('order_id', '=', orderId)
       .orderBy('created_at', 'desc')
       .orderBy('id', 'desc')
@@ -702,6 +780,7 @@ export class OrdersService {
       discountCents: o.discount_cents,
       taxCents: o.tax_cents,
       totalCents: o.total_cents,
+      cashDueCents: cashPayableCents(o.total_cents, o.cash_rounding_increment_cents),
       placedAt: o.placed_at.toISOString(),
       acceptedAt: o.accepted_at?.toISOString() ?? null,
       readyAt: o.ready_at?.toISOString() ?? null,
@@ -715,6 +794,9 @@ export class OrdersService {
             cardBrand: payment.card_brand,
             cardLast4: payment.card_last4,
             failureReason: payment.failure_reason,
+            tenderedCents: payment.tendered_cents,
+            changeCents: payment.change_cents,
+            cashRoundingCents: payment.cash_rounding_cents,
           }
         : null,
       lines: lines

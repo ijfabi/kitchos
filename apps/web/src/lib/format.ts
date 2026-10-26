@@ -28,3 +28,10 @@ export const ORDER_STATUS_LABEL: Record<string, string> = {
   completed: 'Collected',
   cancelled: 'Cancelled',
 };
+
+/** Exact "12.5" / "12.50" / "12" -> cents; null when not a valid amount. Never uses floating point. */
+export function dollarsToCents(text: string): number | null {
+  const m = /^(\d{1,6})(?:\.(\d{1,2}))?$/.exec(text.trim());
+  if (!m) return null;
+  return Number(m[1]) * 100 + Number((m[2] ?? '').padEnd(2, '0'));
+}

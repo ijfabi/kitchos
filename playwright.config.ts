@@ -10,6 +10,7 @@ export default defineConfig({
   timeout: 90_000,
   expect: { timeout: 15_000 },
   fullyParallel: false,
+  workers: 1, // journeys share one seeded database
   retries: 0,
   reporter: [['list'], ['html', { open: 'never' }]],
   use: {

@@ -9,6 +9,12 @@
 | Load (planned)    | k6                                         | Order placement and kitchen commands; reports must state hardware, data, concurrency |
 | Reliability (pl.) | Fault injection                            | Process kill mid-transaction, DB failover, duplicate/out-of-order events, WAN loss   |
 
+## Independent review
+
+Each milestone is reviewed by independent subagents: a code reviewer (report only) and an
+adversarial tester that writes a separate test file and must not weaken assertions to make them
+pass. Genuine defects they find are fixed and their tests kept as regressions.
+
 ## Principles
 
 - Assert on **persisted state** (ledger rows, balances, outbox, audit), not only HTTP responses.

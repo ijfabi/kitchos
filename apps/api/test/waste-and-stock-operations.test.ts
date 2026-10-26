@@ -380,14 +380,20 @@ describe('waste, goods receipts and physical counts', () => {
     expect(res.body.approvedBy).toBeNull(); // under the threshold
     expect((await balance(h, CENTRAL, 'BUN-REG')).onHand).toBe(counted);
 
-    const big = await h.http
-      .post(`/v1/restaurants/${centralId}/inventory/counts`)
-      .set(bearer(manager))
-      .set('Idempotency-Key', randomUUID())
-      .send({ lines: [{ inventoryItemId: sku('COFFEE-BEANS'), counted: '0' }] });
+    const beans = await balance(h, CENTRAL, 'COFFEE-BEANS');
+    const recount = (counted: string) =>
+      h.http
+        .post(`/v1/restaurants/${centralId}/inventory/counts`)
+        .set(bearer(manager))
+        .set('Idempotency-Key', randomUUID())
+        .send({ lines: [{ inventoryItemId: sku('COFFEE-BEANS'), counted }] });
+    const big = await recount('0');
     expect(big.status).toBe(201);
     expect(big.body.approvedBy).toBe('Priya Natarajan');
     expect((await balance(h, CENTRAL, 'COFFEE-BEANS')).onHand).toBe(0);
+    // Restore so other test files that sell coffee are unaffected (files run in shuffled order).
+    expect((await recount(String(beans.onHand))).status).toBe(201);
+    expect((await balance(h, CENTRAL, 'COFFEE-BEANS')).onHand).toBe(beans.onHand);
 
     const supervisor = await login(h, 'supervisor@central.kitchos.test');
     const denied = await h.http

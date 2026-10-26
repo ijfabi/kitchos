@@ -23,18 +23,20 @@ key: ✅ done · 🟡 in progress / partial · ⬜ not started.
 
 ## Phase 1 — Core order processing 🟡
 
-| Item                                                                        | Status |
-| --------------------------------------------------------------------------- | ------ |
-| Versioned menus/recipes, modifiers, combos, availability                    | ✅     |
-| Server-side pricing with GST, idempotent order placement                    | ✅     |
-| Sandbox card payments, payment state machine                                | ✅     |
-| Station routing, kitchen tasks, versioned idempotent task commands          | ✅     |
-| Live updates (LISTEN/NOTIFY → SSE)                                          | ✅     |
-| Handoff, cancellation (with manager rule after production)                  | ✅     |
-| Customer web ordering UI (menu, customise, cart, checkout, tracking)        | ✅     |
-| Kitchen display + expo + pickup board UI                                    | ✅     |
-| POS (staff order entry, cash, parked orders, discounts, overrides, refunds) | ⬜     |
-| Playwright E2E for the customer → kitchen → pickup journey                  | ✅     |
+| Item                                                                 | Status |
+| -------------------------------------------------------------------- | ------ |
+| Versioned menus/recipes, modifiers, combos, availability             | ✅     |
+| Server-side pricing with GST, idempotent order placement             | ✅     |
+| Sandbox card payments, payment state machine                         | ✅     |
+| Station routing, kitchen tasks, versioned idempotent task commands   | ✅     |
+| Live updates (LISTEN/NOTIFY → SSE)                                   | ✅     |
+| Handoff, cancellation (with manager rule after production)           | ✅     |
+| Customer web ordering UI (menu, customise, cart, checkout, tracking) | ✅     |
+| Kitchen display + expo + pickup board UI                             | ✅     |
+| POS: staff order entry, cash + rounding, card, park / recall / void  | ✅     |
+| POS: discounts, coupons, manager overrides, staff/comp meals         | ⬜     |
+| POS: refunds (needs Phase 3 journal), till sessions                  | ⬜     |
+| Playwright E2E for the customer → kitchen → pickup journey           | ✅     |
 
 ## Phase 2 — Inventory 🟡
 
@@ -82,8 +84,8 @@ reliability drills, deployment docs, measured benchmark report.
 
 ## Immediate next tasks
 
-1. Run the Playwright journey in CI (Postgres service + seed + both servers).
-2. POS order entry with cash tender and staff-authenticated order creation.
-3. Waste registration (raw vs prepared) honouring the no-double-deduction invariant.
-4. Goods receipt + physical count endpoints with manager approval thresholds.
-5. Outbox relay worker + first idempotent consumer (journal postings).
+1. POS discounts and manager overrides (with re-authentication and audit).
+2. Outbox relay worker + first idempotent consumer (double-entry journal postings for sales,
+   payments, cash rounding).
+3. Till sessions / cash drawers, then refunds and payment reversal on the journal.
+4. Inventory and waste UI for crew and managers.

@@ -109,6 +109,8 @@ export const MenuResponseSchema = z.object({
   restaurant: PublicRestaurantSchema.extend({
     currency: z.string(),
     openingHours: z.record(z.string(), z.tuple([z.string(), z.string()])),
+    /** Cash totals round to this many cents (5 in Australia); card totals never round. */
+    cashRoundingIncrementCents: z.number().int().positive(),
   }),
   menuVersionId: uuid,
   items: z.array(MenuItemViewSchema),
@@ -139,9 +141,11 @@ export const CreateOrderRequestSchema = z.object({
 });
 export type CreateOrderRequest = z.input<typeof CreateOrderRequestSchema>;
 
+/** Staff-entered orders (POS / drive-thru). Kiosk and web orders come through their own channels. */
 export const StaffCreateOrderRequestSchema = CreateOrderRequestSchema.extend({
-  channel: OrderChannelSchema.default('pos'),
+  channel: z.enum(['pos', 'drive_thru']).default('pos'),
 });
+export type StaffCreateOrderRequest = z.input<typeof StaffCreateOrderRequestSchema>;
 
 /**
  * Card payments accept only a provider token produced client-side by the
@@ -152,6 +156,13 @@ export const PayOrderRequestSchema = z.object({
   paymentToken: z.string().regex(/^tok_[a-z0-9_]{3,64}$/, 'Expected a payment provider token'),
 });
 export type PayOrderRequest = z.infer<typeof PayOrderRequestSchema>;
+
+/** Payment taken by staff at a terminal: cash with tendered amount, or a sandbox card token. */
+export const StaffPaymentRequestSchema = z.discriminatedUnion('method', [
+  z.object({ method: z.literal('cash'), tenderedCents: z.number().int().min(0).max(10_000_000) }),
+  PayOrderRequestSchema,
+]);
+export type StaffPaymentRequest = z.infer<typeof StaffPaymentRequestSchema>;
 
 export const OrderStatusSchema = z.enum([
   'pending_payment',
@@ -198,6 +209,8 @@ export const OrderViewSchema = z.object({
   discountCents: cents,
   taxCents: cents,
   totalCents: cents,
+  /** Amount due if paid in cash (total rounded to the restaurant increment). */
+  cashDueCents: cents,
   placedAt: z.string(),
   acceptedAt: z.string().nullable(),
   readyAt: z.string().nullable(),
@@ -211,6 +224,9 @@ export const OrderViewSchema = z.object({
       cardBrand: z.string().nullable(),
       cardLast4: z.string().nullable(),
       failureReason: z.string().nullable(),
+      tenderedCents: cents.nullable(),
+      changeCents: cents.nullable(),
+      cashRoundingCents: cents,
     })
     .nullable(),
   lines: z.array(OrderLineViewSchema),
