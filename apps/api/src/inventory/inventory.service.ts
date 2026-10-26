@@ -15,6 +15,24 @@ export interface Actor {
 
 export const ORDER_LINE_SOURCE = 'order_line';
 
+export type MovementType =
+  | 'receipt'
+  | 'production_consumption'
+  | 'waste_raw'
+  | 'waste_prepared'
+  | 'count_adjustment'
+  | 'correction';
+
+export interface MovementInput {
+  inventoryItemId: string;
+  movementType: MovementType;
+  /** Signed milli-units of the item's base unit. */
+  quantityMilli: number;
+  sourceType: string;
+  sourceId: string;
+  sourceKey?: string;
+}
+
 const byId = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
 /**
@@ -148,37 +166,105 @@ export class InventoryService {
       .execute();
     if (ingredients.length === 0) return 0;
     const locationId = await this.defaultLocationId(tx, args.restaurantId);
-
-    await this.lockBalances(
-      tx,
+    const inserted = await this.recordMovements(tx, {
+      orgId: args.orgId,
+      restaurantId: args.restaurantId,
       locationId,
-      ingredients.map((i) => i.inventory_item_id),
-    );
-
-    const inserted = await tx
-      .insertInto('stock_movements')
-      .values(
-        ingredients.map((i) => ({
-          org_id: args.orgId,
-          restaurant_id: args.restaurantId,
-          location_id: locationId,
-          inventory_item_id: i.inventory_item_id,
-          movement_type: 'production_consumption',
-          quantity_delta: `-${i.quantity}`,
-          source_type: ORDER_LINE_SOURCE,
-          source_id: args.orderLineId,
-          actor_user_id: args.actor.userId ?? null,
-          actor_device_id: args.actor.deviceId ?? null,
-          occurred_at: sql<Date>`now()`,
-          business_date: sql<string>`app.business_date(${args.restaurantId}::uuid, now())`,
-        })),
-      )
-      .onConflict((oc) => oc.constraint('stock_movements_source_unique').doNothing())
-      .returning('id')
-      .execute();
-
+      actor: args.actor,
+      movements: ingredients.map((i) => ({
+        inventoryItemId: i.inventory_item_id,
+        movementType: 'production_consumption',
+        quantityMilli: -parseDecimalQty(i.quantity),
+        sourceType: ORDER_LINE_SOURCE,
+        sourceId: args.orderLineId,
+      })),
+    });
     await this.closeReservations(tx, locationId, args.orderLineId, 'consumed');
     return inserted.length;
+  }
+
+  /**
+   * The single path for writing ledger movements. Locks the affected balance
+   * rows in ascending item order, then inserts; a movement whose source key
+   * already exists is skipped (exactly-once). Returns the rows inserted.
+   */
+  async recordMovements(
+    tx: Tx,
+    args: {
+      orgId: string;
+      restaurantId: string;
+      locationId: string;
+      actor: Actor;
+      notes?: string | null;
+      movements: readonly MovementInput[];
+    },
+  ): Promise<{ id: string; inventory_item_id: string }[]> {
+    const movements = args.movements.filter((m) => m.quantityMilli !== 0);
+    if (movements.length === 0) return [];
+    await this.lockBalances(
+      tx,
+      args.locationId,
+      movements.map((m) => m.inventoryItemId),
+    );
+    return tx
+      .insertInto('stock_movements')
+      .values(
+        [...movements]
+          .sort((a, b) => byId(a.inventoryItemId, b.inventoryItemId))
+          .map((m) => ({
+            org_id: args.orgId,
+            restaurant_id: args.restaurantId,
+            location_id: args.locationId,
+            inventory_item_id: m.inventoryItemId,
+            movement_type: m.movementType,
+            quantity_delta: formatDecimalQty(m.quantityMilli),
+            source_type: m.sourceType,
+            source_id: m.sourceId,
+            source_key: m.sourceKey ?? '',
+            actor_user_id: args.actor.userId ?? null,
+            actor_device_id: args.actor.deviceId ?? null,
+            occurred_at: sql<Date>`now()`,
+            business_date: sql<string>`app.business_date(${args.restaurantId}::uuid, now())`,
+            notes: args.notes ?? null,
+          })),
+      )
+      .onConflict((oc) => oc.constraint('stock_movements_source_unique').doNothing())
+      .returning(['id', 'inventory_item_id'])
+      .execute();
+  }
+
+  /**
+   * Locks (creating if absent) balance rows and returns on-hand quantities in
+   * milli-units. Used by physical counts, which must compare against a stable
+   * on-hand value.
+   */
+  async lockedBalances(
+    tx: Tx,
+    args: { orgId: string; locationId: string; itemIds: readonly string[] },
+  ): Promise<Map<string, number>> {
+    const sorted = [...new Set(args.itemIds)].sort(byId);
+    if (sorted.length === 0) return new Map();
+    await tx
+      .insertInto('stock_balances')
+      .values(
+        sorted.map((id) => ({
+          org_id: args.orgId,
+          location_id: args.locationId,
+          inventory_item_id: id,
+          reserved: '0',
+        })),
+      )
+      .onConflict((oc) => oc.columns(['location_id', 'inventory_item_id']).doNothing())
+      .execute();
+    const rows = await tx
+      .selectFrom('stock_balances')
+      .select(['inventory_item_id', 'on_hand'])
+      .where('location_id', '=', args.locationId)
+      .where('inventory_item_id', 'in', sorted)
+      .orderBy('inventory_item_id')
+      .forUpdate()
+      .execute();
+    return new Map(rows.map((r) => [r.inventory_item_id, parseDecimalQty(r.on_hand)]));
   }
 
   /** Releases any still-active reservations for a line (e.g. cancelled before production). */
@@ -195,6 +281,7 @@ export class InventoryService {
       .distinct()
       .where('source_type', '=', ORDER_LINE_SOURCE)
       .where('source_id', 'in', orderLineIds)
+      .where('source_key', '=', '')
       .where('movement_type', '=', 'production_consumption')
       .execute();
     return new Set(rows.map((r) => r.source_id));

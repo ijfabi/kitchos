@@ -9,6 +9,7 @@ import {
   MODIFIERS,
   PRODUCTS,
   RESTAURANTS,
+  STANDARD_COSTS,
   type RestaurantSeed,
 } from './catalog.ts';
 
@@ -82,6 +83,7 @@ async function seedDemoOrg(db: Database, log: (m: string) => void): Promise<void
         name: item.name,
         base_unit: item.baseUnit,
         category: item.category,
+        standard_unit_cost: STANDARD_COSTS[item.sku] ?? '0',
       })
       .returning('id')
       .executeTakeFirstOrThrow();

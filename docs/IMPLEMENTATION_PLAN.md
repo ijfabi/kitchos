@@ -40,9 +40,11 @@ key: ✅ done · 🟡 in progress / partial · ⬜ not started.
 
 Done: append-only ledger, balance projection, reservations, configurable consumption point,
 exactly-once consumption, shortage policies, reconciliation query.
-Next: goods receiving, physical counts & adjustments (approval), waste registration UI + waste
-classification without double deduction, unit conversions, valuation (moving average), lots &
-expiry, inventory API for managers, low-stock alerts, theoretical vs actual usage report.
+Done (Milestone 3): waste registration with physical/financial separation, remakes, approval
+threshold + reversal, waste summary, direct goods receipts, physical counts with variance and
+approval, standard-cost valuation.
+Next: waste + inventory UI, transfers between stores, lots & expiry, unit conversions, moving-
+average valuation, batch production, low-stock alerts, theoretical vs actual usage report.
 
 ## Phase 3 — Finance and management ⬜
 

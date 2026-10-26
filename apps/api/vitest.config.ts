@@ -8,5 +8,7 @@ export default defineConfig({
     hookTimeout: 180_000,
     // Files share one seeded database and assert on stock deltas.
     fileParallelism: false,
+    // Shuffle file order so cross-file state dependencies surface; tests within a file stay ordered.
+    sequence: { shuffle: { files: true, tests: false } },
   },
 });

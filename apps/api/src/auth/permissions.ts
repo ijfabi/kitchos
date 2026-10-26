@@ -13,6 +13,9 @@ export const PERMISSIONS = [
   'kitchen.operate',
   'inventory.view',
   'inventory.adjust',
+  'inventory.approve',
+  'waste.record',
+  'waste.approve',
   'reports.view',
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
@@ -23,12 +26,15 @@ const CREW: Permission[] = [
   'orders.handoff',
   'kitchen.view',
   'kitchen.operate',
+  'waste.record',
 ];
 const SUPERVISOR: Permission[] = [...CREW, 'orders.cancel', 'inventory.view'];
 const MANAGER: Permission[] = [
   ...SUPERVISOR,
   'orders.cancel_after_prep',
   'inventory.adjust',
+  'inventory.approve',
+  'waste.approve',
   'reports.view',
 ];
 const OVERSIGHT: Permission[] = ['orders.view', 'kitchen.view', 'inventory.view', 'reports.view'];
@@ -42,7 +48,13 @@ export const ROLE_PERMISSIONS: Record<string, readonly Permission[]> = {
   area_manager: OVERSIGHT,
   regional_manager: OVERSIGHT,
   franchise_owner: OVERSIGHT,
-  inventory_controller: ['inventory.view', 'inventory.adjust'],
+  inventory_controller: [
+    'inventory.view',
+    'inventory.adjust',
+    'inventory.approve',
+    'waste.record',
+    'waste.approve',
+  ],
   payroll_administrator: [],
   head_office_administrator: [...PERMISSIONS],
   auditor: OVERSIGHT,

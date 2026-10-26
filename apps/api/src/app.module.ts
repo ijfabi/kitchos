@@ -14,6 +14,8 @@ import { HealthController } from './health/health.controller.ts';
 import { DB, LOGGER, PG_POOL } from './infra/tokens.ts';
 import { InventoryController } from './inventory/inventory.controller.ts';
 import { InventoryService } from './inventory/inventory.service.ts';
+import { StockOperationsController } from './inventory/stock-operations.controller.ts';
+import { StockOperationsService } from './inventory/stock-operations.service.ts';
 import { KitchenController } from './kitchen/kitchen.controller.ts';
 import { KitchenService } from './kitchen/kitchen.service.ts';
 import { PublicOrdersController } from './ordering/public-orders.controller.ts';
@@ -45,6 +47,7 @@ export class AppModule {
         StaffOrdersController,
         KitchenController,
         InventoryController,
+        StockOperationsController,
         LiveEventsController,
       ],
       providers: [
@@ -56,6 +59,7 @@ export class AppModule {
         StaffAuthGuard,
         MenuRepository,
         InventoryService,
+        StockOperationsService,
         KitchenService,
         OrdersService,
         LiveEventsService,

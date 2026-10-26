@@ -298,3 +298,172 @@ export const LiveEventSchema = z.object({
   aggregateId: uuid,
 });
 export type LiveEvent = z.infer<typeof LiveEventSchema>;
+
+// ---------------------------------------------------------------- inventory operations
+
+/** Positive decimal quantity in the item's base unit, up to 3 decimal places. */
+const decimalQty = z
+  .string()
+  .regex(/^\d{1,12}(\.\d{1,3})?$/, 'Expected a decimal quantity with up to 3 decimals')
+  .refine((s) => /[1-9]/.test(s), 'Quantity must be greater than zero');
+const decimalQtyOrZero = z.string().regex(/^\d{1,12}(\.\d{1,3})?$/, 'Expected a decimal quantity');
+
+export const WASTE_REASONS = [
+  'expired',
+  'spoiled',
+  'dropped',
+  'spilled',
+  'burnt',
+  'incorrect_order',
+  'poor_quality',
+  'overproduction',
+  'equipment_failure',
+  'temperature_breach',
+  'cancelled_prepared_order',
+  'other',
+] as const;
+export const WasteReasonSchema = z.enum(WASTE_REASONS);
+
+const wasteCommon = {
+  reason: WasteReasonSchema,
+  stationId: uuid.optional(),
+  notes: z.string().trim().max(1000).optional(),
+};
+
+export const RecordWasteRequestSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('raw_ingredient'),
+    inventoryItemId: uuid,
+    quantity: decimalQty,
+    ...wasteCommon,
+  }),
+  z
+    .object({
+      kind: z.literal('prepared_item'),
+      /** The order line whose prepared item was wasted (preferred: enables exact recipe and no double deduction). */
+      orderLineId: uuid.optional(),
+      /** Or a menu item, for prepared food not tied to an order (e.g. overproduction). */
+      menuItemId: uuid.optional(),
+      quantity: z.number().int().min(1).max(100),
+      /** Remake the item for the same order line (consumes a fresh portion). */
+      remake: z.boolean().default(false),
+      ...wasteCommon,
+    })
+    .refine((v) => (v.orderLineId ? 1 : 0) + (v.menuItemId ? 1 : 0) === 1, {
+      message: 'Provide exactly one of orderLineId or menuItemId',
+    })
+    .refine((v) => !v.remake || !!v.orderLineId, { message: 'Remake requires an orderLineId' }),
+]);
+export type RecordWasteRequest = z.input<typeof RecordWasteRequestSchema>;
+
+export const ReviewWasteRequestSchema = z.object({ reason: z.string().trim().min(3).max(500) });
+
+export const WasteRecordViewSchema = z.object({
+  id: uuid,
+  kind: z.enum(['raw_ingredient', 'prepared_item']),
+  itemName: z.string(),
+  quantity: z.string(),
+  reason: WasteReasonSchema,
+  remake: z.boolean(),
+  costCents: cents,
+  status: z.enum(['recorded', 'pending_approval', 'approved', 'rejected']),
+  recordedBy: z.string(),
+  reviewedBy: z.string().nullable(),
+  reviewReason: z.string().nullable(),
+  stationName: z.string().nullable(),
+  notes: z.string().nullable(),
+  businessDate: z.string(),
+  occurredAt: z.string(),
+  lines: z.array(
+    z.object({
+      sku: z.string(),
+      name: z.string(),
+      quantity: z.string(),
+      treatment: z.enum(['deducted_now', 'already_consumed']),
+      costCents: cents,
+    }),
+  ),
+});
+export type WasteRecordView = z.infer<typeof WasteRecordViewSchema>;
+
+export const WasteSummarySchema = z.object({
+  from: z.string(),
+  to: z.string(),
+  totalCostCents: cents,
+  /** Cost of waste whose ingredients were already in production consumption (reclassified, not double counted). */
+  reclassifiedFromConsumptionCents: cents,
+  /** Cost of waste that removed stock directly. */
+  deductedDirectlyCents: cents,
+  byReason: z.array(z.object({ reason: z.string(), records: z.number().int(), costCents: cents })),
+  byStation: z.array(
+    z.object({ station: z.string(), records: z.number().int(), costCents: cents }),
+  ),
+  byEmployee: z.array(
+    z.object({ employee: z.string(), records: z.number().int(), costCents: cents }),
+  ),
+});
+export type WasteSummary = z.infer<typeof WasteSummarySchema>;
+
+export const GoodsReceiptRequestSchema = z.object({
+  supplierName: z.string().trim().max(120).optional(),
+  reference: z.string().trim().max(120).optional(),
+  notes: z.string().trim().max(1000).optional(),
+  lines: z
+    .array(
+      z.object({
+        inventoryItemId: uuid,
+        quantity: decimalQty,
+        unitCost: z
+          .string()
+          .regex(/^\d{1,10}(\.\d{1,6})?$/)
+          .optional(),
+        lotCode: z.string().trim().max(64).optional(),
+        expiresOn: z.iso.date().optional(),
+      }),
+    )
+    .min(1)
+    .max(200)
+    .refine(
+      (ls) => new Set(ls.map((l) => l.inventoryItemId)).size === ls.length,
+      'Each item may appear once',
+    ),
+});
+export type GoodsReceiptRequest = z.input<typeof GoodsReceiptRequestSchema>;
+
+export const StockCountRequestSchema = z.object({
+  notes: z.string().trim().max(1000).optional(),
+  lines: z
+    .array(z.object({ inventoryItemId: uuid, counted: decimalQtyOrZero }))
+    .min(1)
+    .max(500)
+    .refine(
+      (ls) => new Set(ls.map((l) => l.inventoryItemId)).size === ls.length,
+      'Each item may appear once',
+    ),
+});
+export type StockCountRequest = z.input<typeof StockCountRequestSchema>;
+
+export const StockCountViewSchema = z.object({
+  id: uuid,
+  businessDate: z.string(),
+  varianceCents: cents,
+  approvedBy: z.string().nullable(),
+  lines: z.array(
+    z.object({
+      sku: z.string(),
+      name: z.string(),
+      expected: z.string(),
+      counted: z.string(),
+      variance: z.string(),
+      varianceCents: cents,
+    }),
+  ),
+});
+export type StockCountView = z.infer<typeof StockCountViewSchema>;
+
+export const GoodsReceiptViewSchema = z.object({
+  id: uuid,
+  businessDate: z.string(),
+  lines: z.array(z.object({ sku: z.string(), name: z.string(), quantity: z.string() })),
+});
+export type GoodsReceiptView = z.infer<typeof GoodsReceiptViewSchema>;

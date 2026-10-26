@@ -726,3 +726,43 @@ export const HEAD_OFFICE_STAFF: (StaffSeed & {
 
 /** Shared development password for every synthetic account. Never used outside local/dev. */
 export const DEMO_PASSWORD = 'kitchos-demo-pass';
+
+/**
+ * Synthetic standard costs in cents per base unit (each / g / ml). Used for
+ * interim standard-cost valuation of waste and count variances.
+ */
+export const STANDARD_COSTS: Record<string, string> = {
+  'BUN-REG': '45',
+  'BUN-SES': '55',
+  'PATTY-BEEF': '110',
+  'CHICKEN-FILLET': '150',
+  'CHEESE-SLICE': '18',
+  BACON: '40',
+  LETTUCE: '0.8',
+  TOMATO: '0.6',
+  ONION: '0.3',
+  PICKLES: '0.7',
+  'SAUCE-BURGER': '1.2',
+  MAYO: '0.9',
+  'FRIES-FROZEN': '0.4',
+  'SYRUP-COLA': '0.5',
+  'SYRUP-LEMONADE': '0.5',
+  'COFFEE-BEANS': '4.5',
+  MILK: '0.17',
+  'MILK-OAT': '0.4',
+  'SOFTSERVE-MIX': '0.35',
+  'SAUCE-CHOC': '0.8',
+  CROISSANT: '120',
+  'BANANA-BREAD': '95',
+  'PKG-BURGER-WRAP': '4',
+  'PKG-CHICKEN-BOX': '12',
+  'PKG-FRY-M': '6',
+  'PKG-FRY-L': '7',
+  'PKG-CUP-M': '9',
+  'PKG-CUP-L': '11',
+  'PKG-LID-COLD': '3',
+  'PKG-COFFEE-CUP': '14',
+  'PKG-COFFEE-LID': '5',
+  'PKG-DESSERT-CUP': '8',
+  'PKG-PASTRY-BAG': '3',
+};

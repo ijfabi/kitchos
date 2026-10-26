@@ -70,6 +70,29 @@ export interface Devices {
   status: Generated<string>;
 }
 
+export interface GoodsReceiptLines {
+  expires_on: string | null;
+  goods_receipt_id: string;
+  inventory_item_id: string;
+  lot_code: string | null;
+  org_id: string;
+  quantity: Numeric;
+  unit_cost: Numeric | null;
+}
+
+export interface GoodsReceipts {
+  business_date: string;
+  id: Generated<string>;
+  location_id: string;
+  notes: string | null;
+  org_id: string;
+  received_at: Generated<Timestamp>;
+  received_by: string;
+  reference: string | null;
+  restaurant_id: string;
+  supplier_name: string | null;
+}
+
 export interface IdempotencyKeys {
   created_at: Generated<Timestamp>;
   key: string;
@@ -95,6 +118,7 @@ export interface InventoryItems {
   name: string;
   org_id: string;
   sku: string;
+  standard_unit_cost: Generated<Numeric>;
 }
 
 export interface KitchenTasks {
@@ -357,6 +381,7 @@ export interface Restaurants {
   address: string | null;
   brand_id: string;
   business_day_cutoff: Generated<string>;
+  count_approval_threshold_cents: Generated<ColumnType<number, number | bigint, number | bigint>>;
   created_at: Generated<Timestamp>;
   currency: Generated<string>;
   id: Generated<string>;
@@ -371,6 +396,7 @@ export interface Restaurants {
   stock_shortage_policy: Generated<string>;
   tax_rate_bp: Generated<number>;
   timezone: string;
+  waste_approval_threshold_cents: Generated<ColumnType<number, number | bigint, number | bigint>>;
 }
 
 export interface RoleAssignments {
@@ -409,6 +435,29 @@ export interface StockBalances {
   reserved: Generated<Numeric>;
   updated_at: Generated<Timestamp>;
   version: Generated<ColumnType<number, number | bigint, number | bigint>>;
+}
+
+export interface StockCountLines {
+  counted: Numeric;
+  expected: Numeric;
+  inventory_item_id: string;
+  org_id: string;
+  stock_count_id: string;
+  variance: Numeric;
+  variance_cents: ColumnType<number, number | bigint, number | bigint>;
+}
+
+export interface StockCounts {
+  approved_by: string | null;
+  business_date: string;
+  counted_at: Generated<Timestamp>;
+  counted_by: string;
+  id: Generated<string>;
+  location_id: string;
+  notes: string | null;
+  org_id: string;
+  restaurant_id: string;
+  variance_cents: ColumnType<number, number | bigint, number | bigint>;
 }
 
 export interface StockLocations {
@@ -462,11 +511,49 @@ export interface Users {
   status: Generated<string>;
 }
 
+export interface WasteRecordLines {
+  cost_cents: ColumnType<number, number | bigint, number | bigint>;
+  inventory_item_id: string;
+  org_id: string;
+  quantity: Numeric;
+  treatment: string;
+  unit_cost: Numeric;
+  waste_record_id: string;
+}
+
+export interface WasteRecords {
+  business_date: string;
+  cost_cents: ColumnType<number, number | bigint, number | bigint>;
+  id: Generated<string>;
+  inventory_item_id: string | null;
+  kind: string;
+  location_id: string;
+  notes: string | null;
+  occurred_at: Generated<Timestamp>;
+  order_line_id: string | null;
+  org_id: string;
+  photo_url: string | null;
+  product_id: string | null;
+  quantity: Numeric;
+  reason: string;
+  recorded_by: string;
+  remake: Generated<boolean>;
+  restaurant_id: string;
+  review_reason: string | null;
+  reviewed_at: Timestamp | null;
+  reviewed_by: string | null;
+  station_id: string | null;
+  status: string;
+  version: Generated<number>;
+}
+
 export interface DB {
   audit_log: AuditLog;
   brands: Brands;
   combo_components: ComboComponents;
   devices: Devices;
+  goods_receipt_lines: GoodsReceiptLines;
+  goods_receipts: GoodsReceipts;
   idempotency_keys: IdempotencyKeys;
   inbox_events: InboxEvents;
   inventory_items: InventoryItems;
@@ -497,8 +584,12 @@ export interface DB {
   schema_migrations: SchemaMigrations;
   stations: Stations;
   stock_balances: StockBalances;
+  stock_count_lines: StockCountLines;
+  stock_counts: StockCounts;
   stock_locations: StockLocations;
   stock_movements: StockMovements;
   stock_reservations: StockReservations;
   users: Users;
+  waste_record_lines: WasteRecordLines;
+  waste_records: WasteRecords;
 }

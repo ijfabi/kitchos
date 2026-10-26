@@ -1,5 +1,46 @@
 # Progress log
 
+## Milestone 3 — Waste, receiving and counts without double deduction (2026-10-26)
+
+### Implemented
+
+- Migration `0003_inventory_operations`: `waste_prepared` movement type, standard unit costs,
+  per-restaurant approval thresholds, `waste_records` + append-only `waste_record_lines`
+  (treatment per ingredient), append-only goods receipts and stock counts; RLS and
+  least-privilege grants (only review columns of a waste record are updatable).
+- `InventoryService.recordMovements` — the single locked, idempotent path for all ledger writes
+  (consumption refactored onto it with no behaviour change: 21/21 still passing).
+- Waste API: raw and prepared waste, order-line-linked waste using the immutable ingredient
+  snapshot, remakes, overproduction waste from the pinned recipe, approval/rejection with
+  segregation of duties and compensating corrections, list and summary (reason/station/
+  employee, reclassified vs direct cost).
+- Goods receipts (with lot/expiry capture) and physical counts (variance vs locked on-hand,
+  approval above threshold).
+- Domain: exact standard-cost valuation (`extendedCostCents`, bigint arithmetic, property test).
+- ADR-0011.
+
+### Tests executed
+
+| Suite                                | Result                      |
+| ------------------------------------ | --------------------------- |
+| `@kitchos/domain`                    | 18/18 passed                |
+| `@kitchos/api` integration           | 31/31 passed (×2, shuffled) |
+| ESLint / Prettier / tsc (5 packages) | clean                       |
+
+Mutation check: forcing prepared waste to always deduct makes 3 waste tests fail (invariant 12
+test, remake test, summary split).
+
+### Findings
+
+- Integration tests had a hidden cross-file dependency (a count zeroed patties used by other
+  files); exposed when Vitest reordered files. Fixed, and file order is now shuffled every run.
+- A mutation edit using `//` silently broke compilation and reported "no tests" — a reminder to
+  confirm a mutation run actually executes tests before trusting it.
+
+### Next
+
+Inventory/waste UI for managers and crew; POS; outbox relay + journal postings.
+
 ## Milestone 2 — Customer, kitchen, expo and pickup UI on the live API (2026-10-26)
 
 ### Implemented
