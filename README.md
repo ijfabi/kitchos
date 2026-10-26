@@ -34,7 +34,7 @@ pnpm db:up          # PostgreSQL 18 (:55432) + Redis 8 (:56379)
 pnpm db:migrate
 pnpm db:seed
 pnpm --filter @kitchos/api dev     # http://localhost:4000
-pnpm --filter @kitchos/web dev     # http://localhost:3000
+pnpm --filter @kitchos/web dev     # http://localhost:3100
 ```
 
 Demo staff accounts (synthetic, local only) use the password `kitchos-demo-pass`, for example
@@ -45,6 +45,7 @@ Demo staff accounts (synthetic, local only) use the password `kitchos-demo-pass`
 ```bash
 pnpm --filter @kitchos/domain test   # unit + property-based tests
 pnpm --filter @kitchos/api test      # integration tests against a throwaway PostgreSQL 18 container
+pnpm test:e2e                        # Playwright journey through the real UI (uses the local seeded DB)
 ```
 
 ## Repository layout

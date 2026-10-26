@@ -1,5 +1,40 @@
 # Progress log
 
+## Milestone 2 — Customer, kitchen, expo and pickup UI on the live API (2026-10-26)
+
+### Implemented
+
+- `apps/web` (Next.js 16, React 19, Tailwind 4, TanStack Query): restaurant picker; customer
+  ordering with search, categories, allergen/energy info, modifier and meal customisation,
+  cart, sandbox checkout and live order tracking with declined-payment retry; staff sign-in and
+  workspace picker filtered by permissions; kitchen display per station with ageing timers,
+  modifier call-outs, recipe notes, optimistic-concurrency commands, SSE live updates with
+  polling fallback and a connection indicator; expo/handoff board; public pickup board.
+- Playwright journey test driving the real UI end to end.
+
+### Tests executed
+
+| Suite                                  | Result       |
+| -------------------------------------- | ------------ |
+| `@kitchos/domain` unit + property      | 15/15 passed |
+| `@kitchos/api` integration (PG 18)     | 21/21 passed |
+| Playwright E2E (Chromium, local stack) | 1/1 passed   |
+| ESLint / Prettier / tsc (5 packages)   | clean        |
+| `next build` (production)              | succeeded    |
+
+### Findings
+
+- Port 3000 on the development machine is held by an unrelated Docker container; the web app
+  now runs on **3100** (API CORS default updated).
+- An early version of the E2E test passed vacuously: `getByText('Collected')` matched the
+  progress-step label rather than the order status. Assertions now target the status element
+  (`data-testid="order-status"`) and were re-verified.
+
+### Remaining gaps
+
+E2E not yet in CI; no POS; staff session in `sessionStorage` (device identity pending);
+kitchen ageing thresholds are display constants, not per-restaurant configuration.
+
 ## Milestone 1 — Foundation + first verified vertical slice (2026-10-26)
 
 ### Implemented

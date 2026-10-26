@@ -10,7 +10,7 @@ pnpm install
 pnpm db:up && pnpm db:migrate && pnpm db:seed   # local Postgres 18 on :55432, Redis on :56379
 pnpm db:reset                                   # drop + migrate + seed (local only)
 pnpm --filter @kitchos/api dev                  # API on :4000
-pnpm --filter @kitchos/web dev                  # web on :3000
+pnpm --filter @kitchos/web dev                  # web on :3100
 pnpm lint && pnpm format:check && pnpm typecheck
 pnpm --filter @kitchos/domain test              # unit + property tests
 pnpm --filter @kitchos/api test                 # integration (starts its own PG container)

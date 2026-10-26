@@ -31,10 +31,10 @@ key: ✅ done · 🟡 in progress / partial · ⬜ not started.
 | Station routing, kitchen tasks, versioned idempotent task commands          | ✅     |
 | Live updates (LISTEN/NOTIFY → SSE)                                          | ✅     |
 | Handoff, cancellation (with manager rule after production)                  | ✅     |
-| Customer web ordering UI (menu, customise, cart, checkout, tracking)        | 🟡     |
-| Kitchen display + expo + pickup board UI                                    | 🟡     |
+| Customer web ordering UI (menu, customise, cart, checkout, tracking)        | ✅     |
+| Kitchen display + expo + pickup board UI                                    | ✅     |
 | POS (staff order entry, cash, parked orders, discounts, overrides, refunds) | ⬜     |
-| Playwright E2E for the customer → kitchen → pickup journey                  | ⬜     |
+| Playwright E2E for the customer → kitchen → pickup journey                  | ✅     |
 
 ## Phase 2 — Inventory 🟡
 
@@ -80,7 +80,7 @@ reliability drills, deployment docs, measured benchmark report.
 
 ## Immediate next tasks
 
-1. Finish customer web + KDS/expo/pickup UI against the live API; Playwright journey test.
+1. Run the Playwright journey in CI (Postgres service + seed + both servers).
 2. POS order entry with cash tender and staff-authenticated order creation.
 3. Waste registration (raw vs prepared) honouring the no-double-deduction invariant.
 4. Goods receipt + physical count endpoints with manager approval thresholds.

@@ -1,0 +1,66 @@
+@import 'tailwindcss';
+
+/*
+ * KitchOS design tokens. Light surfaces for customers and managers; the
+ * kitchen surfaces opt into the dark "ops" palette via .theme-ops for glare
+ * and contrast in a working kitchen. All text/background pairs target WCAG AA.
+ */
+@theme {
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+
+  --color-ink: #17181c;
+  --color-ink-muted: #4b5060;
+  --color-ink-subtle: #6b7080;
+  --color-paper: #ffffff;
+  --color-canvas: #f6f5f2;
+  --color-line: #e4e2dc;
+
+  --color-brand: #c2410c;
+  --color-brand-strong: #9a3412;
+  --color-brand-soft: #fff1e8;
+
+  --color-ok: #15803d;
+  --color-ok-soft: #e8f6ed;
+  --color-warn: #a16207;
+  --color-warn-soft: #fdf6e3;
+  --color-danger: #b91c1c;
+  --color-danger-soft: #fdecec;
+  --color-info: #1d4ed8;
+  --color-info-soft: #e9effd;
+
+  --color-ops-bg: #0f1115;
+  --color-ops-panel: #181b21;
+  --color-ops-raised: #20242c;
+  --color-ops-line: #2c313b;
+  --color-ops-text: #f2f3f5;
+  --color-ops-muted: #a3a9b6;
+}
+
+html,
+body {
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+.theme-ops {
+  background: var(--color-ops-bg);
+  color: var(--color-ops-text);
+}
+
+:focus-visible {
+  outline: 3px solid var(--color-brand);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
