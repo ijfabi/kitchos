@@ -1,6 +1,11 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { withTenant, type Database, type Tx } from '@kitchos/database';
-import type { OrderLineInput, OrderView, StaffPaymentRequest } from '@kitchos/contracts';
+import type {
+  OrderDiscountView,
+  OrderLineInput,
+  OrderView,
+  StaffPaymentRequest,
+} from '@kitchos/contracts';
 import {
   DomainError,
   formatDecimalQty,
@@ -450,8 +455,12 @@ export class OrdersService {
     );
   }
 
-  /** pending_payment -> accepted: release to the kitchen and consume order_accepted lines. */
-  private async accept(
+  /**
+   * pending_payment -> accepted: release to the kitchen and consume
+   * order_accepted lines. Called after a captured payment, or by the discount
+   * flow when a fully discounted (complimentary) order has nothing to pay.
+   */
+  async accept(
     tx: Tx,
     args: { orgId: string; restaurantId: string; orderId: string; version: number; actor: Actor },
   ): Promise<DomainEventInput[]> {
@@ -756,6 +765,21 @@ export class OrdersService {
       .orderBy('id', 'desc')
       .limit(1)
       .executeTakeFirst();
+    const discount = await tx
+      .selectFrom('order_discounts as d')
+      .innerJoin('users as a', 'a.id', 'd.applied_by')
+      .innerJoin('users as p', 'p.id', 'd.approved_by')
+      .select([
+        'd.kind',
+        'd.value',
+        'd.amount_cents',
+        'd.reason',
+        'd.override_id',
+        'a.display_name as applied_by',
+        'p.display_name as approved_by',
+      ])
+      .where('d.order_id', '=', orderId)
+      .executeTakeFirst();
     const tasks = await tx
       .selectFrom('kitchen_tasks as t')
       .innerJoin('stations as s', 's.id', 't.station_id')
@@ -818,6 +842,17 @@ export class OrdersService {
               modifiers: modsFor(c.id),
             })),
         })),
+      discount: discount
+        ? {
+            kind: discount.kind as OrderDiscountView['kind'],
+            value: discount.value,
+            amountCents: discount.amount_cents,
+            reason: discount.reason as OrderDiscountView['reason'],
+            appliedBy: discount.applied_by,
+            approvedBy: discount.approved_by,
+            viaOverride: discount.override_id !== null,
+          }
+        : null,
       tasks: tasks.map((t) => ({
         id: t.id,
         label: t.label,

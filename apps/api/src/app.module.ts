@@ -11,6 +11,7 @@ import { APP_CONFIG, type AppConfig } from './config.ts';
 import { LiveEventsController } from './events/live-events.controller.ts';
 import { LiveEventsService } from './events/live-events.service.ts';
 import { HealthController } from './health/health.controller.ts';
+import { CredentialThrottle } from './infra/rate-limit.ts';
 import { DB, LOGGER, PG_POOL } from './infra/tokens.ts';
 import { InventoryController } from './inventory/inventory.controller.ts';
 import { InventoryService } from './inventory/inventory.service.ts';
@@ -19,7 +20,9 @@ import { StockOperationsService } from './inventory/stock-operations.service.ts'
 import { KitchenController } from './kitchen/kitchen.controller.ts';
 import { KitchenService } from './kitchen/kitchen.service.ts';
 import { PublicOrdersController } from './ordering/public-orders.controller.ts';
+import { DiscountsService } from './ordering/discounts.service.ts';
 import { OrdersService } from './ordering/orders.service.ts';
+import { OverridesController } from './ordering/overrides.controller.ts';
 import { StaffOrdersController } from './ordering/staff-orders.controller.ts';
 
 export interface AppDependencies {
@@ -45,6 +48,7 @@ export class AppModule {
         CatalogController,
         PublicOrdersController,
         StaffOrdersController,
+        OverridesController,
         KitchenController,
         InventoryController,
         StockOperationsController,
@@ -56,12 +60,14 @@ export class AppModule {
         { provide: PG_POOL, useValue: deps.pool },
         { provide: LOGGER, useValue: deps.logger },
         AuthService,
+        CredentialThrottle,
         StaffAuthGuard,
         MenuRepository,
         InventoryService,
         StockOperationsService,
         KitchenService,
         OrdersService,
+        DiscountsService,
         LiveEventsService,
       ],
     };

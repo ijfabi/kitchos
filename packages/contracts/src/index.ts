@@ -230,6 +230,7 @@ export const OrderViewSchema = z.object({
     })
     .nullable(),
   lines: z.array(OrderLineViewSchema),
+  discount: z.lazy(() => OrderDiscountViewSchema).nullable(),
   tasks: z.array(
     z.object({
       id: uuid,
@@ -483,3 +484,75 @@ export const GoodsReceiptViewSchema = z.object({
   lines: z.array(z.object({ sku: z.string(), name: z.string(), quantity: z.string() })),
 });
 export type GoodsReceiptView = z.infer<typeof GoodsReceiptViewSchema>;
+
+// ---------------------------------------------------------------- discounts & manager overrides
+
+export const DISCOUNT_REASONS = [
+  'customer_service',
+  'promotion',
+  'staff_meal',
+  'complimentary',
+  'price_match',
+  'other',
+] as const;
+
+export const ApplyDiscountRequestSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('percent'),
+    /** Basis points: 1000 = 10%, 10000 = 100%. */
+    value: z.number().int().min(1).max(10_000),
+    reason: z.enum(DISCOUNT_REASONS),
+    note: z.string().trim().max(500).optional(),
+    overrideToken: z
+      .string()
+      .regex(/^[0-9a-f]{64}$/)
+      .optional(),
+  }),
+  z.object({
+    kind: z.literal('amount'),
+    /** Cents off the order. */
+    value: z.number().int().min(1).max(10_000_000),
+    reason: z.enum(DISCOUNT_REASONS),
+    note: z.string().trim().max(500).optional(),
+    overrideToken: z
+      .string()
+      .regex(/^[0-9a-f]{64}$/)
+      .optional(),
+  }),
+]);
+export type ApplyDiscountRequest = z.input<typeof ApplyDiscountRequestSchema>;
+
+/** A manager re-authenticates at the terminal to authorise one action for one order. */
+export const CreateOverrideRequestSchema = z.object({
+  email: z.email().max(254),
+  password: z.string().min(1).max(256),
+  action: z.literal('order.discount'),
+  orderId: uuid,
+  /** The exact discount being approved; the override only authorises this discount. */
+  discount: z.object({
+    kind: z.enum(['percent', 'amount']),
+    value: z.number().int().min(1).max(10_000_000),
+    reason: z.enum(DISCOUNT_REASONS),
+  }),
+});
+export type CreateOverrideRequest = z.infer<typeof CreateOverrideRequestSchema>;
+
+export const OverrideResponseSchema = z.object({
+  overrideToken: z.string(),
+  expiresAt: z.string(),
+  approverName: z.string(),
+  /** Amount the approver authorised, computed by the server. */
+  discountCents: cents,
+});
+export type OverrideResponse = z.infer<typeof OverrideResponseSchema>;
+
+export const OrderDiscountViewSchema = z.object({
+  kind: z.enum(['percent', 'amount']),
+  value: z.number().int(),
+  amountCents: cents,
+  reason: z.enum(DISCOUNT_REASONS),
+  appliedBy: z.string(),
+  approvedBy: z.string(),
+  viaOverride: z.boolean(),
+});
+export type OrderDiscountView = z.infer<typeof OrderDiscountViewSchema>;

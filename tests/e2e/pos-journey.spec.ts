@@ -50,3 +50,40 @@ test('crew rings up a cash sale with change, then parks, recalls and card-pays a
   await ticket.getByRole('button', { name: 'New sale' }).click();
   await expect(ticket.locator('li', { hasText: 'Table 9' })).toHaveCount(0);
 });
+
+test('a discount above the crew limit is approved by a manager at the terminal', async ({
+  browser,
+}) => {
+  const context = await browser.newContext({ viewport: { width: 1366, height: 900 } });
+  const page = await context.newPage();
+  await page.goto('/staff');
+  await page.getByLabel('Email').fill('crew1@central.kitchos.test');
+  await page.getByLabel('Password').fill('kitchos-demo-pass');
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await page.getByRole('link', { name: 'Point of sale' }).click();
+
+  const products = page.getByRole('region', { name: 'Products' });
+  await products.getByRole('button', { name: /^Cheeseburger Meal/ }).click();
+  await page
+    .getByRole('dialog', { name: 'Cheeseburger Meal' })
+    .getByRole('button', { name: /Add to order/ })
+    .click();
+  const ticket = page.getByRole('complementary', { name: 'Current order' });
+
+  await ticket.getByRole('button', { name: 'Discount' }).click();
+  await ticket.getByLabel('Discount percent').fill('50');
+  await ticket.getByLabel('Discount reason').selectOption('customer_service');
+  await ticket.getByRole('button', { name: 'Apply discount' }).click();
+
+  const approval = ticket.getByRole('form', { name: 'Manager approval' });
+  await expect(approval.getByText('Manager approval for $6.45 off')).toBeVisible();
+  await approval.getByLabel('Manager email').fill('manager@central.kitchos.test');
+  await approval.getByLabel('Manager password').fill('kitchos-demo-pass');
+  await approval.getByRole('button', { name: 'Approve discount' }).click();
+
+  await expect(page.getByTestId('discount-line')).toContainText('approved by Priya Natarajan');
+  await expect(page.getByTestId('pos-total')).toHaveText('$6.45');
+  await page.screenshot({ path: 'test-results/screens/09-pos-discount.png' });
+  await ticket.getByRole('button', { name: 'Card' }).click();
+  await expect(ticket.getByText('Paid by visa · $6.45')).toBeVisible();
+});

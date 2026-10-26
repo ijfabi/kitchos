@@ -34,7 +34,8 @@ key: ✅ done · 🟡 in progress / partial · ⬜ not started.
 | Customer web ordering UI (menu, customise, cart, checkout, tracking) | ✅     |
 | Kitchen display + expo + pickup board UI                             | ✅     |
 | POS: staff order entry, cash + rounding, card, park / recall / void  | ✅     |
-| POS: discounts, coupons, manager overrides, staff/comp meals         | ⬜     |
+| POS: discounts, manager overrides, staff/comp meals                  | ✅     |
+| POS: coupons, line-level discounts                                   | ⬜     |
 | POS: refunds (needs Phase 3 journal), till sessions                  | ⬜     |
 | Playwright E2E for the customer → kitchen → pickup journey           | ✅     |
 
@@ -84,8 +85,7 @@ reliability drills, deployment docs, measured benchmark report.
 
 ## Immediate next tasks
 
-1. POS discounts and manager overrides (with re-authentication and audit).
-2. Outbox relay worker + first idempotent consumer (double-entry journal postings for sales,
-   payments, cash rounding).
-3. Till sessions / cash drawers, then refunds and payment reversal on the journal.
-4. Inventory and waste UI for crew and managers.
+1. Outbox relay worker + first idempotent consumer (double-entry journal postings for sales,
+   discounts, payments, cash rounding) — opens Phase 3.
+2. Till sessions / cash drawers, then refunds and payment reversal on the journal.
+3. Inventory and waste UI for crew and managers.

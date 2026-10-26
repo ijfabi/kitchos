@@ -143,6 +143,24 @@ export interface KitchenTasks {
   version: Generated<number>;
 }
 
+export interface ManagerOverrides {
+  action: string;
+  approver_user_id: string;
+  consumed_at: Timestamp | null;
+  created_at: Generated<Timestamp>;
+  discount_cents: ColumnType<number, number | bigint, number | bigint>;
+  discount_kind: string;
+  discount_reason: string;
+  discount_value: ColumnType<number, number | bigint, number | bigint>;
+  expires_at: Timestamp;
+  id: Generated<string>;
+  order_id: string;
+  org_id: string;
+  requested_by: string;
+  restaurant_id: string;
+  secret_hash: string;
+}
+
 export interface MenuItems {
   category: string;
   display_order: Generated<number>;
@@ -200,6 +218,21 @@ export interface ModifierOptions {
   price_delta_cents: Generated<ColumnType<number, number | bigint, number | bigint>>;
 }
 
+export interface OrderDiscounts {
+  amount_cents: ColumnType<number, number | bigint, number | bigint>;
+  applied_by: string;
+  approved_by: string;
+  created_at: Generated<Timestamp>;
+  id: Generated<string>;
+  kind: string;
+  note: string | null;
+  order_id: string;
+  org_id: string;
+  override_id: string | null;
+  reason: string;
+  value: ColumnType<number, number | bigint, number | bigint>;
+}
+
 export interface OrderLineIngredients {
   inventory_item_id: string;
   order_line_id: string;
@@ -219,6 +252,7 @@ export interface OrderLineModifiers {
 export interface OrderLines {
   combo_component_id: string | null;
   consumption_point: string | null;
+  discount_cents: Generated<ColumnType<number, number | bigint, number | bigint>>;
   id: Generated<string>;
   kind: string;
   line_no: number;
@@ -389,6 +423,8 @@ export interface Restaurants {
   count_approval_threshold_cents: Generated<ColumnType<number, number | bigint, number | bigint>>;
   created_at: Generated<Timestamp>;
   currency: Generated<string>;
+  discount_self_approval_bp: Generated<number>;
+  discount_self_approval_cents: Generated<ColumnType<number, number | bigint, number | bigint>>;
   id: Generated<string>;
   menu_id: string;
   name: string;
@@ -563,12 +599,14 @@ export interface DB {
   inbox_events: InboxEvents;
   inventory_items: InventoryItems;
   kitchen_tasks: KitchenTasks;
+  manager_overrides: ManagerOverrides;
   menu_items: MenuItems;
   menu_versions: MenuVersions;
   menus: Menus;
   modifier_groups: ModifierGroups;
   modifier_option_ingredients: ModifierOptionIngredients;
   modifier_options: ModifierOptions;
+  order_discounts: OrderDiscounts;
   order_line_ingredients: OrderLineIngredients;
   order_line_modifiers: OrderLineModifiers;
   order_lines: OrderLines;

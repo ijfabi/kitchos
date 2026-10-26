@@ -16,6 +16,8 @@ export const PERMISSIONS = [
   'inventory.approve',
   'waste.record',
   'waste.approve',
+  'discount.apply',
+  'discount.approve',
   'reports.view',
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
@@ -27,8 +29,9 @@ const CREW: Permission[] = [
   'kitchen.view',
   'kitchen.operate',
   'waste.record',
+  'discount.apply',
 ];
-const SUPERVISOR: Permission[] = [...CREW, 'orders.cancel', 'inventory.view'];
+const SUPERVISOR: Permission[] = [...CREW, 'orders.cancel', 'inventory.view', 'discount.approve'];
 const MANAGER: Permission[] = [
   ...SUPERVISOR,
   'orders.cancel_after_prep',

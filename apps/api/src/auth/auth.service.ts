@@ -40,24 +40,11 @@ export class AuthService {
     email: string,
     password: string,
   ): Promise<{ accessToken: string; expiresAt: string; principal: StaffPrincipal }> {
-    const row = (
-      await sql<{ user_id: string; org_id: string; password_hash: string; status: string }>`
-        select * from app.lookup_login(${email})`.execute(this.db)
-    ).rows[0];
-    const ok = await verifyPassword(row?.password_hash ?? (await this.dummyHash), password).catch(
-      () => false,
-    );
-    if (!row || !ok || row.status !== 'active') {
-      throw new ApiException(401, 'INVALID_CREDENTIALS', 'Email or password is incorrect');
-    }
-    const principal = await this.loadPrincipal(row.org_id, row.user_id);
-    if (!principal)
-      throw new ApiException(401, 'INVALID_CREDENTIALS', 'Email or password is incorrect');
-
+    const principal = await this.verifyCredentials(email, password);
     const expires = Math.floor(Date.now() / 1000) + TOKEN_TTL_SECONDS;
-    const accessToken = await new SignJWT({ org: row.org_id, typ: 'staff' })
+    const accessToken = await new SignJWT({ org: principal.orgId, typ: 'staff' })
       .setProtectedHeader({ alg: 'HS256' })
-      .setSubject(row.user_id)
+      .setSubject(principal.userId)
       .setIssuer(ISSUER)
       .setAudience(AUDIENCE)
       .setIssuedAt()
@@ -89,6 +76,28 @@ export class AuthService {
     }
     const principal = await this.loadPrincipal(claims.org, claims.sub);
     if (!principal) throw unauthorized('Account is disabled');
+    return principal;
+  }
+
+  /**
+   * Checks an email/password pair and returns the active user with their role
+   * assignments. Used for sign-in and for terminal re-authentication (manager
+   * overrides), which must not create a session for the approver.
+   */
+  async verifyCredentials(email: string, password: string): Promise<StaffPrincipal> {
+    const row = (
+      await sql<{ user_id: string; org_id: string; password_hash: string; status: string }>`
+        select * from app.lookup_login(${email})`.execute(this.db)
+    ).rows[0];
+    const ok = await verifyPassword(row?.password_hash ?? (await this.dummyHash), password).catch(
+      () => false,
+    );
+    const principal =
+      row && ok && row.status === 'active'
+        ? await this.loadPrincipal(row.org_id, row.user_id)
+        : null;
+    if (!principal)
+      throw new ApiException(401, 'INVALID_CREDENTIALS', 'Email or password is incorrect');
     return principal;
   }
 

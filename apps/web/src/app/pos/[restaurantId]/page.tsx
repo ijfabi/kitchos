@@ -9,6 +9,7 @@ import {
   Ban,
   CreditCard,
   PauseCircle,
+  Percent,
   RotateCcw,
   Trash2,
   X,
@@ -17,6 +18,7 @@ import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useMemo, useRef, useState } from 'react';
 import { ItemDialog, type CartLine } from '@/components/order/item-dialog';
+import { DiscountPanel } from '@/components/pos/discount-panel';
 import { StaffGate } from '@/components/staff-gate';
 import { Badge, Button, EmptyState, Logo, Spinner } from '@/components/ui';
 import { api, ApiError, get, newIdempotencyKey } from '@/lib/api';
@@ -83,6 +85,7 @@ function Pos({ session }: { session: StaffSession }) {
   const [done, setDone] = useState<OrderView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [payableHint, setPayableHint] = useState<number | null>(null);
+  const [discountOpen, setDiscountOpen] = useState(false);
   // One key per ticket so retries never create a second order; one per payment attempt.
   const ticketKey = useRef(newIdempotencyKey());
 
@@ -106,6 +109,7 @@ function Pos({ session }: { session: StaffSession }) {
     setTendered('');
     setError(null);
     setPayableHint(null);
+    setDiscountOpen(false);
     ticketKey.current = newIdempotencyKey();
   };
   const onError = (err: Error) => {
@@ -223,6 +227,8 @@ function Pos({ session }: { session: StaffSession }) {
   const tenderedCents = dollarsToCents(tendered);
   const tenderValid = tenderedCents !== null;
   const busy = pay.isPending || park.isPending;
+  // The order on screen is unpaid too; don't list it as parked.
+  const parkedOthers = (parked.data ?? []).filter((o) => o.id !== active?.id);
   const editable = !active;
 
   return (
@@ -313,8 +319,9 @@ function Pos({ session }: { session: StaffSession }) {
               <p className="text-sm text-ink-muted">Order</p>
               <p className="text-6xl font-black">#{done.orderNumber}</p>
               <p className="text-ink-muted">
-                Paid {done.payment?.method === 'cash' ? 'cash' : `by ${done.payment?.cardBrand}`} ·{' '}
-                {money(done.totalCents)}
+                {done.payment
+                  ? `Paid ${done.payment.method === 'cash' ? 'cash' : `by ${done.payment.cardBrand}`} · ${money(done.totalCents)}`
+                  : 'Complimentary · nothing to pay · sent to the kitchen'}
               </p>
               {done.payment?.method === 'cash' && (
                 <div className="mt-2 rounded-xl bg-ok-soft px-8 py-4">
@@ -381,6 +388,21 @@ function Pos({ session }: { session: StaffSession }) {
                         </div>
                       </li>
                     ))}
+                {active?.discount && (
+                  <li
+                    className="flex justify-between gap-2 py-2 text-sm text-ok"
+                    data-testid="discount-line"
+                  >
+                    <span>
+                      Discount · {active.discount.reason.replace(/_/g, ' ')}
+                      {active.discount.viaOverride &&
+                        ` (approved by ${active.discount.approvedBy})`}
+                    </span>
+                    <span className="shrink-0 whitespace-nowrap">
+                      −{money(active.discount.amountCents)}
+                    </span>
+                  </li>
+                )}
                 {!active && lines.length === 0 && (
                   <EmptyState title="Tap products to start an order" />
                 )}
@@ -427,7 +449,23 @@ function Pos({ session }: { session: StaffSession }) {
                   </p>
                 )}
 
-                {cashOpen ? (
+                {discountOpen ? (
+                  <DiscountPanel
+                    restaurantId={restaurantId}
+                    token={token}
+                    ensureOrder={placeTicket}
+                    onClose={() => setDiscountOpen(false)}
+                    onApplied={(order) => {
+                      setDiscountOpen(false);
+                      void qc.invalidateQueries({ queryKey: ['parked', restaurantId] });
+                      if (order.status !== 'pending_payment') {
+                        // Fully discounted: already sent to the kitchen, nothing to pay.
+                        setDone(order);
+                        reset();
+                      } else setActive(order);
+                    }}
+                  />
+                ) : cashOpen ? (
                   <form
                     className="space-y-2"
                     onSubmit={(e) => {
@@ -496,6 +534,19 @@ function Pos({ session }: { session: StaffSession }) {
                 ) : (
                   <div className="grid grid-cols-3 gap-2">
                     <Button
+                      variant="ghost"
+                      size="md"
+                      className="col-span-3 border border-dashed border-line"
+                      disabled={(!active && lines.length === 0) || busy || !!active?.discount}
+                      onClick={() => {
+                        setError(null);
+                        setDiscountOpen(true);
+                      }}
+                    >
+                      <Percent className="size-4" aria-hidden />{' '}
+                      {active?.discount ? 'Discount applied' : 'Discount'}
+                    </Button>
+                    <Button
                       variant="secondary"
                       size="xl"
                       disabled={!editable || lines.length === 0 || busy}
@@ -531,10 +582,10 @@ function Pos({ session }: { session: StaffSession }) {
 
               <details className="border-t border-line">
                 <summary className="cursor-pointer select-none px-4 py-3 text-sm font-semibold">
-                  Parked orders ({parked.data?.length ?? 0})
+                  Parked orders ({parkedOthers.length})
                 </summary>
                 <ul className="max-h-56 divide-y divide-line overflow-y-auto px-4 pb-3">
-                  {(parked.data ?? []).map((o) => (
+                  {parkedOthers.map((o) => (
                     <li key={o.id} className="flex items-center justify-between gap-2 py-2 text-sm">
                       <span>
                         <span className="font-semibold">#{o.orderNumber}</span>{' '}
@@ -570,7 +621,7 @@ function Pos({ session }: { session: StaffSession }) {
                       </span>
                     </li>
                   ))}
-                  {parked.data?.length === 0 && (
+                  {parkedOthers.length === 0 && (
                     <li className="py-2 text-sm text-ink-muted">No parked orders.</li>
                   )}
                 </ul>

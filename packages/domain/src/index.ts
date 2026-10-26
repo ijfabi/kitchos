@@ -5,3 +5,4 @@ export * from './state-machine.ts';
 export * from './menu.ts';
 export * from './valuation.ts';
 export * from './cash.ts';
+export * from './discount.ts';

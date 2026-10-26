@@ -12,6 +12,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import {
+  ApplyDiscountRequestSchema,
   CancelOrderRequestSchema,
   OrderChannelSchema,
   OrderStatusSchema,
@@ -32,6 +33,7 @@ import type { StaffPrincipal } from '../auth/auth.service.ts';
 import type { Permission } from '../auth/permissions.ts';
 import { requireIdempotencyKey } from '../infra/idempotency.ts';
 import { UuidParam, ZodPipe } from '../infra/zod.ts';
+import { DiscountsService } from './discounts.service.ts';
 import { OrdersService } from './orders.service.ts';
 
 const ListQuery = z.object({
@@ -47,7 +49,35 @@ const ListQuery = z.object({
 @Controller('v1/restaurants/:restaurantId/orders')
 @UseGuards(StaffAuthGuard)
 export class StaffOrdersController {
-  constructor(@Inject(OrdersService) private readonly orders: OrdersService) {}
+  constructor(
+    @Inject(OrdersService) private readonly orders: OrdersService,
+    @Inject(DiscountsService) private readonly discounts: DiscountsService,
+  ) {}
+
+  /** Apply a discount to an unpaid order (self-approved within limits, else needs approval). */
+  @Post(':orderId/discount')
+  @HttpCode(200)
+  @RequirePermission('discount.apply')
+  async discount(
+    @Param('restaurantId', UuidParam) restaurantId: string,
+    @Param('orderId', UuidParam) orderId: string,
+    @Body(new ZodPipe(ApplyDiscountRequestSchema))
+    body: z.output<typeof ApplyDiscountRequestSchema>,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Principal() p: StaffPrincipal,
+    @CurrentPermissions() permissions: Set<Permission>,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<OrderView> {
+    const key = requireIdempotencyKey(idempotencyKey);
+    const result = await this.discounts.applyDiscount(
+      { orgId: p.orgId, restaurantId, userId: p.userId, permissions },
+      orderId,
+      body,
+      key,
+    );
+    if (result.replayed) res.setHeader('Idempotent-Replayed', 'true');
+    return result.body;
+  }
 
   @Get()
   @RequirePermission('orders.view')

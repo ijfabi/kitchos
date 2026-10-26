@@ -10,21 +10,23 @@ Method: STRIDE over the implemented trust boundaries. Updated as features land.
 
 ## Threats and controls
 
-| STRIDE                 | Threat                                                     | Control (implemented unless noted)                                                                          |
-| ---------------------- | ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| Spoofing               | Staff credential stuffing                                  | argon2id, per-IP and per-account rate limits, uniform error + timing for unknown users; MFA _planned_       |
-| Spoofing               | Forged/altered JWT                                         | HS256 signature, issuer/audience/expiry checks, roles reloaded from DB; asymmetric OIDC _planned_           |
-| Tampering              | Client-supplied prices or totals                           | Pricing exclusively from server-side published menu; unknown fields ignored (tested)                        |
-| Tampering              | Rewriting stock/audit history                              | Runtime role lacks UPDATE/DELETE; triggers block even the owner (tested)                                    |
-| Tampering              | Changing a published menu/recipe after orders reference it | Immutability triggers (tested)                                                                              |
-| Repudiation            | Manager denies cancelling a prepared order                 | Append-only `audit_log` with actor, reason, permission used                                                 |
-| Information disclosure | Cross-tenant data access (IDOR)                            | RLS on every tenant table + tenant derived server-side; 404 for foreign restaurants (tested)                |
-| Information disclosure | Card data exposure                                         | Token-only contract; PAN-shaped input rejected (tested); no card data stored beyond brand/last4             |
-| Information disclosure | Guest order enumeration                                    | 128-bit random order tokens; pickup board exposes order numbers only                                        |
-| Information disclosure | Secrets in logs                                            | pino redaction of authorization, cookies, passwords, payment tokens                                         |
-| Denial of service      | Oversized or abusive requests                              | Zod limits (≤40 lines, qty ≤50, ≤20 modifiers), statement timeout 10 s; global rate limiting _planned_      |
-| Elevation of privilege | Crew performing manager actions                            | Permission per route + contextual check (cancel after production needs `orders.cancel_after_prep`) (tested) |
-| Elevation of privilege | Platform staff browsing tenant data                        | `platform_administrator` has no implicit tenant permissions                                                 |
+| STRIDE                 | Threat                                                               | Control (implemented unless noted)                                                                                            |
+| ---------------------- | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| Spoofing               | Staff credential stuffing                                            | argon2id, per-IP and per-account rate limits, uniform error + timing for unknown users; MFA _planned_                         |
+| Spoofing               | Forged/altered JWT                                                   | HS256 signature, issuer/audience/expiry checks, roles reloaded from DB; asymmetric OIDC _planned_                             |
+| Tampering              | Client-supplied prices or totals                                     | Pricing exclusively from server-side published menu; unknown fields ignored (tested)                                          |
+| Tampering              | Rewriting stock/audit history                                        | Runtime role lacks UPDATE/DELETE; triggers block even the owner (tested)                                                      |
+| Tampering              | Changing a published menu/recipe after orders reference it           | Immutability triggers (tested)                                                                                                |
+| Repudiation            | Manager denies cancelling a prepared order                           | Append-only `audit_log` with actor, reason, permission used                                                                   |
+| Information disclosure | Cross-tenant data access (IDOR)                                      | RLS on every tenant table + tenant derived server-side; 404 for foreign restaurants (tested)                                  |
+| Information disclosure | Card data exposure                                                   | Token-only contract; PAN-shaped input rejected (tested); no card data stored beyond brand/last4                               |
+| Information disclosure | Guest order enumeration                                              | 128-bit random order tokens; pickup board exposes order numbers only                                                          |
+| Information disclosure | Secrets in logs                                                      | pino redaction of authorization, cookies, passwords, payment tokens                                                           |
+| Denial of service      | Oversized or abusive requests                                        | Zod limits (≤40 lines, qty ≤50, ≤20 modifiers), statement timeout 10 s; global rate limiting _planned_                        |
+| Elevation of privilege | Crew performing manager actions                                      | Permission per route + contextual check (cancel after production needs `orders.cancel_after_prep`) (tested)                   |
+| Elevation of privilege | Crew obtaining a manager approval and using it for a bigger discount | Override bound to restaurant, order, requester and the exact discount; single use; 2-minute expiry (tested, mutation-checked) |
+| Spoofing               | Brute-forcing an approver password from a terminal                   | Shared per-account failure budget (IP-independent) + per-requester budget; denied attempts audited (tested)                   |
+| Elevation of privilege | Platform staff browsing tenant data                                  | `platform_administrator` has no implicit tenant permissions                                                                   |
 
 ## Known gaps (see RISKS.md)
 

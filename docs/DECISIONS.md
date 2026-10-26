@@ -26,4 +26,7 @@ Architecture decisions are recorded as ADRs in `docs/adr/`. Smaller decisions ar
 | D-010    | Public guest payments are card-token only; cash is accepted only on authenticated staff routes                     | 2026-10-27 |
 | D-011    | Idempotency scopes include the surface and restaurant whenever a replay precedes an authorisation re-check         | 2026-10-27 |
 | D-012    | POS keeps the payment idempotency key across network/5xx failures; only definitive 4xx responses rotate it         | 2026-10-27 |
+| ADR-0012 | Discounts with self-approval limits; manager overrides bound to the exact discount                                 | 2026-10-27 |
+| D-013    | Password-guessing budget is per account (IP-independent), counts failures only, shared by sign-in and overrides    | 2026-10-27 |
+| D-014    | A fully discounted order is accepted immediately (no payment row); stock is consumed as usual                      | 2026-10-27 |
 | D-005    | Demo seed uses one shared dev password for all synthetic accounts (local only)                                     | 2026-10-26 |

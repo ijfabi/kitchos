@@ -1,5 +1,57 @@
 # Progress log
 
+## Milestone 5 — POS discounts and manager overrides (2026-10-27)
+
+### Implemented
+
+- Migration `0005_discounts_and_overrides`: per-restaurant self-approval limits, per-line
+  `discount_cents`, append-only `order_discounts` (one per order), `manager_overrides` with hashed
+  single-use secrets bound to restaurant, order, requester, expiry and the exact discount;
+  approver ≠ requester enforced by CHECK; RLS and column-level grants.
+- Domain: `applyDiscount` (percent/amount, largest-remainder allocation across lines, GST on the
+  discounted taxable portion), `discountBasisPoints` — property-tested.
+- API: `POST /v1/restaurants/:id/orders/:orderId/discount` (`discount.apply`) with the
+  self-approval policy; `POST /v1/restaurants/:id/overrides` for terminal re-authentication;
+  fully discounted orders are accepted straight to the kitchen; `order.discounted` event;
+  audit for grants, denials and discounts. `CredentialThrottle` now shared by sign-in and
+  overrides.
+- POS UI: discount panel (percent/amount, reason), inline manager approval showing the amount,
+  discount line on the ticket, comp completion screen.
+- Permissions: `discount.apply` (crew and above), `discount.approve` (supervisor and above).
+- ADR-0012.
+
+### Independent review and testing (subagents)
+
+Both the reviewer and the adversarial tester independently found the same **high-severity
+defect**: an override was not bound to an amount, so a manager approving "15%" could be turned
+into a 100% comp by the crew member (proved by a failing test). Fixed by binding the override
+to the exact discount, computing and returning the approved amount at grant time, and auditing
+it; regression tests kept and mutation-checked (removing the binding fails 2 tests).
+
+Also fixed from their findings: the override endpoint added an extra password-guessing budget
+and its per-account key included the (spoofable) client IP; successful checks counted towards
+lockout; failed overrides were not audited; the discount panel generated a new idempotency key
+per request (lost responses surfaced as errors), re-placed the ticket from a stale closure,
+had a render-lagged double-submit guard and kept the approver's email in memory.
+
+Not changed (recorded as risks): supervisors can comp without a second person (R-013);
+account-level throttling enables temporary approver lockout (R-014).
+
+### Tests executed
+
+| Suite                                | Result                      |
+| ------------------------------------ | --------------------------- |
+| `@kitchos/domain`                    | 28/28 passed                |
+| `@kitchos/api` integration           | 69/69 passed (×2, shuffled) |
+| Playwright (3 journeys)              | 3/3 passed                  |
+| ESLint / Prettier / tsc (5 packages) | clean                       |
+| `next build`                         | succeeded                   |
+
+### Notes
+
+- Migration 0005 was amended before it was ever committed or deployed (local DB reset); applied,
+  released migrations remain immutable.
+
 ## Milestone 4 — POS core: staff order entry, cash tender, park / recall / void (2026-10-27)
 
 ### Implemented
