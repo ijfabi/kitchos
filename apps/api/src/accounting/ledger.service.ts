@@ -6,7 +6,7 @@ export interface EntryInput {
   orgId: string;
   restaurantId: string;
   businessDate: string;
-  entryType: 'payment_receipt' | 'sale_recognition';
+  entryType: 'payment_receipt' | 'sale_recognition' | 'refund';
   sourceType: string;
   sourceId: string;
   sourceEventId: string | null;

@@ -1,5 +1,5 @@
 import { DomainError } from './errors.ts';
-import { assertCents, cents, inclusiveTax, type Cents } from './money.ts';
+import { assertCents, cents, divRoundHalfUp, inclusiveTax, type Cents } from './money.ts';
 
 /** Accounts referenced by posting rules (resolved per tenant via accounts.system_key). */
 export type SystemAccount =
@@ -9,6 +9,7 @@ export type SystemAccount =
   | 'gst_payable'
   | 'sales_revenue'
   | 'sales_discounts'
+  | 'sales_returns'
   | 'cash_rounding';
 
 export interface Posting {
@@ -135,6 +136,76 @@ export function saleRecognitionPostings(f: SaleFacts): Posting[] {
     credit('sales_revenue', grossExTax, 'Sales (ex GST)'),
     credit('gst_payable', f.taxCents, 'GST collected'),
   ]);
+  assertBalanced(result);
+  return result;
+}
+
+export interface RefundFacts {
+  readonly method: 'cash' | 'card';
+  readonly treatment: 'deposit_release' | 'sales_return';
+  /** Amount refunded against the order in this refund. */
+  readonly amountCents: number;
+  /** Cash only: cash handed back − amount (rounding to the restaurant increment). */
+  readonly cashRoundingCents: number;
+  /** Order total and the GST it contains (for the sales-return GST share). */
+  readonly orderTotalCents: number;
+  readonly orderTaxCents: number;
+  /** Amount already refunded on this order before this refund. */
+  readonly previouslyRefundedCents: number;
+}
+
+/**
+ * GST contained in a refund, computed cumulatively so that the shares of any
+ * sequence of partial refunds sum to exactly the order's GST at full refund
+ * and never exceed it.
+ */
+export function refundGstShare(
+  f: Pick<
+    RefundFacts,
+    'amountCents' | 'orderTotalCents' | 'orderTaxCents' | 'previouslyRefundedCents'
+  >,
+): Cents {
+  if (f.orderTotalCents <= 0) return cents(0);
+  const share = (refunded: number) =>
+    Number(divRoundHalfUp(BigInt(refunded) * BigInt(f.orderTaxCents), BigInt(f.orderTotalCents)));
+  return cents(share(f.previouslyRefundedCents + f.amountCents) - share(f.previouslyRefundedCents));
+}
+
+/**
+ * Refund postings. The money side mirrors the original receipt (card clearing,
+ * or cash on hand with rounding). The other side depends on the treatment:
+ *   deposit_release: Dr Customer deposits — the order was never earned;
+ *   sales_return:    Dr Sales returns (ex GST) + Dr GST payable (its share).
+ * Stock is never restored by a refund.
+ */
+export function refundPostings(f: RefundFacts): Posting[] {
+  for (const v of [f.amountCents, f.orderTotalCents, f.orderTaxCents, f.previouslyRefundedCents]) {
+    assertCents(v);
+    if (v < 0) throw new DomainError('AMOUNT_OUT_OF_RANGE', 'Refund amounts must not be negative');
+  }
+  assertCents(f.cashRoundingCents);
+  if (f.amountCents <= 0) throw new DomainError('AMOUNT_OUT_OF_RANGE', 'Refund must be positive');
+  if (f.previouslyRefundedCents + f.amountCents > f.orderTotalCents) {
+    throw new DomainError('AMOUNT_OUT_OF_RANGE', 'Refunds cannot exceed the order total');
+  }
+  const money: Posting[] =
+    f.method === 'card'
+      ? [credit('card_clearing', f.amountCents, 'Card refund')]
+      : [
+          credit('cash_on_hand', f.amountCents + f.cashRoundingCents, 'Cash refunded'),
+          debit('cash_rounding', f.cashRoundingCents, 'Cash rounding'),
+        ];
+  let other: Posting[];
+  if (f.treatment === 'deposit_release') {
+    other = [debit('customer_deposits', f.amountCents, 'Deposit returned')];
+  } else {
+    const gst = refundGstShare(f);
+    other = [
+      debit('sales_returns', f.amountCents - gst, 'Sales return (ex GST)'),
+      debit('gst_payable', gst, 'GST on return'),
+    ];
+  }
+  const result = normalise([...other, ...money]);
   assertBalanced(result);
   return result;
 }

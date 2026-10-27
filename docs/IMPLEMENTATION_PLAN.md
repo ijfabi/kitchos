@@ -89,7 +89,7 @@ reliability drills, deployment docs, measured benchmark report.
 
 ## Immediate next tasks
 
-1. Refunds and payment reversal (clears customer deposits; reversing journal entries).
-2. Till sessions / cash drawers with blind counts, feeding shift close.
-3. Inventory valuation postings (COGS on consumption, waste expense, reclassification).
-4. Inventory and waste UI for crew and managers.
+1. Till sessions / cash drawers with blind counts (cash sales and cash refunds per drawer),
+   feeding shift close.
+2. Inventory valuation postings (COGS on consumption, waste expense, reclassification).
+3. Inventory and waste UI for crew and managers.

@@ -759,12 +759,29 @@ export class OrdersService {
         'tendered_cents',
         'change_cents',
         'cash_rounding_cents',
+        'refunded_cents',
       ])
       .where('order_id', '=', orderId)
       .orderBy('created_at', 'desc')
       .orderBy('id', 'desc')
       .limit(1)
       .executeTakeFirst();
+    const refunds = await tx
+      .selectFrom('refunds as f')
+      .innerJoin('users as u', 'u.id', 'f.requested_by')
+      .select([
+        'f.id',
+        'f.method',
+        'f.amount_cents',
+        'f.cash_rounding_cents',
+        'f.treatment',
+        'f.reason',
+        'f.created_at',
+        'u.display_name',
+      ])
+      .where('f.order_id', '=', orderId)
+      .orderBy('f.id')
+      .execute();
     const discount = await tx
       .selectFrom('order_discounts as d')
       .innerJoin('users as a', 'a.id', 'd.applied_by')
@@ -821,6 +838,7 @@ export class OrdersService {
             tenderedCents: payment.tendered_cents,
             changeCents: payment.change_cents,
             cashRoundingCents: payment.cash_rounding_cents,
+            refundedCents: payment.refunded_cents,
           }
         : null,
       lines: lines
@@ -842,6 +860,16 @@ export class OrdersService {
               modifiers: modsFor(c.id),
             })),
         })),
+      refunds: refunds.map((f) => ({
+        id: f.id,
+        method: f.method as 'card' | 'cash',
+        amountCents: f.amount_cents,
+        cashReturnedCents: f.method === 'cash' ? f.amount_cents + f.cash_rounding_cents : null,
+        treatment: f.treatment as 'deposit_release' | 'sales_return',
+        reason: f.reason as OrderView['refunds'][number]['reason'],
+        requestedBy: f.display_name,
+        createdAt: f.created_at.toISOString(),
+      })),
       discount: discount
         ? {
             kind: discount.kind as OrderDiscountView['kind'],

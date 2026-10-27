@@ -1,5 +1,63 @@
 # Progress log
 
+## Milestone 7 — Refunds and payment reversal (2026-10-27)
+
+### Implemented
+
+- Migration `0007_refunds`: `payments.refunded_cents` (CHECK ≤ amount), append-only `refunds`
+  (method, amount, refunded-before, cash rounding, treatment, reason), `refund` journal entry
+  type, Sales returns account (4200) in the default chart.
+- Domain: `refundPostings` (deposit release vs sales return) and `refundGstShare` (cumulative, so
+  partial refunds return exactly the order GST at full refund) — property-tested.
+- API: `POST /v1/restaurants/:id/orders/:orderId/refunds` (`payments.refund`, supervisor and up;
+  idempotent; completed or cancelled orders only; order then payment locked; payment state
+  machine; audit; `payment.refunded` event). Ledger consumer posts refunds; reconciliation now
+  includes refunds. Order view lists refunds and the refunded amount.
+- Orders & refunds screen; Playwright journey refunds part of a handed-over order and checks the
+  books still reconcile.
+- DB pool hardening: TCP keepalive and a pooled-connection timeout; keepalive on the LISTEN
+  connection.
+- ADR-0014; resolves R-016.
+
+### Independent review and testing (subagents)
+
+- **Both** the reviewer and the adversarial tester found the same defect, and the tester proved
+  it: partial cash refunds were rounded independently, so 3c + 3c + 784c on a 790c cash payment
+  handed back 795c. Fixed by recording `refunded_before_cents` under the payment lock and
+  computing cash back cumulatively, capped at the cash actually taken (full refund returns
+  exactly that); regression test kept and mutation-checked.
+- Also fixed from the review: full cash refunds depended on the current rounding increment; GST
+  ordering relied on uuidv7 time order (now uses the recorded refunded-before amount); the new
+  client-side `query_timeout` would have returned dead sockets to the pool (removed; keepalive
+  instead); the UI sent a possibly stale default amount.
+- Adversarial suite (10 scenarios) otherwise held: 8 concurrent partial refunds, refunds racing
+  handoff and cancel, idempotency abuse, discounted cash orders, comp orders, cross-tenant and
+  permission checks, no stock effect, books reconcile.
+
+### Findings
+
+- An E2E run stalled for about an hour (environmental: the host paused); the rerun passed in
+  31 s. It prompted the pool keepalive change. The screenshot from that run also exposed a
+  vacuous E2E assertion (it matched a refund from an earlier run), now scoped to the refunded
+  order's card.
+- File shuffling exposed one more cross-file dependency (a global dead-letter count), now
+  scoped to the restaurant under test.
+
+### Tests executed
+
+| Suite                                | Result                        |
+| ------------------------------------ | ----------------------------- |
+| `@kitchos/domain`                    | 40/40 passed                  |
+| `@kitchos/api` integration           | 104/104 passed (×3, shuffled) |
+| Playwright (5 journeys)              | 5/5 passed                    |
+| ESLint / Prettier / tsc (5 packages) | clean                         |
+| `next build`                         | succeeded                     |
+
+### Not done
+
+Refund approval for crew (R-018), line-level returns for mixed GST orders (R-019), split tender,
+gift cards, till sessions, COGS/waste postings.
+
 ## Milestone 6 — Double-entry journal fed by the event dispatcher (2026-10-27)
 
 ### Implemented

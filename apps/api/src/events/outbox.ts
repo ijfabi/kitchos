@@ -3,7 +3,7 @@ import type { Tx } from '@kitchos/database';
 export interface DomainEventInput {
   orgId: string;
   restaurantId: string;
-  aggregateType: 'order' | 'payment' | 'kitchen_task' | 'stock';
+  aggregateType: 'order' | 'payment' | 'refund' | 'kitchen_task' | 'stock';
   aggregateId: string;
   aggregateVersion: number;
   eventType: string;

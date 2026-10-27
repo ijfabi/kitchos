@@ -1,6 +1,11 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { Tx } from '@kitchos/database';
-import { inclusiveTax, paymentReceiptPostings, saleRecognitionPostings } from '@kitchos/domain';
+import {
+  inclusiveTax,
+  paymentReceiptPostings,
+  refundPostings,
+  saleRecognitionPostings,
+} from '@kitchos/domain';
 import { sql } from 'kysely';
 import { LedgerService } from './ledger.service.ts';
 
@@ -23,17 +28,63 @@ export interface EventConsumer {
  * the authoritative tables (never trusted from the event payload):
  *   payment.captured -> payment receipt (deposit liability, cash rounding)
  *   order.completed  -> sale recognition (revenue, discounts, GST)
+ *   payment.refunded -> refund (deposit returned, or sales return with GST share)
  */
 @Injectable()
 export class LedgerConsumer implements EventConsumer {
   readonly name = 'ledger';
-  readonly eventTypes = ['payment.captured', 'order.completed'] as const;
+  readonly eventTypes = ['payment.captured', 'order.completed', 'payment.refunded'] as const;
 
   constructor(@Inject(LedgerService) private readonly ledger: LedgerService) {}
 
   async handle(tx: Tx, event: ConsumedEvent): Promise<void> {
     if (event.eventType === 'payment.captured') return this.paymentCaptured(tx, event);
     if (event.eventType === 'order.completed') return this.orderCompleted(tx, event);
+    if (event.eventType === 'payment.refunded') return this.paymentRefunded(tx, event);
+  }
+
+  private async paymentRefunded(tx: Tx, event: ConsumedEvent): Promise<void> {
+    const r = await tx
+      .selectFrom('refunds as f')
+      .innerJoin('orders as o', 'o.id', 'f.order_id')
+      .select([
+        'f.id',
+        'f.order_id',
+        'f.restaurant_id',
+        'f.method',
+        'f.treatment',
+        'f.amount_cents',
+        'f.refunded_before_cents',
+        'f.cash_rounding_cents',
+        'f.created_at',
+        'o.order_number',
+        'o.total_cents',
+        'o.tax_cents',
+        sql<string>`app.business_date(f.restaurant_id, f.created_at)::text`.as('business_date'),
+      ])
+      .where('f.id', '=', event.aggregateId)
+      .executeTakeFirst();
+    if (!r) throw new Error(`refund ${event.aggregateId} not found`);
+    await this.ledger.post(tx, {
+      orgId: event.orgId,
+      restaurantId: r.restaurant_id,
+      businessDate: r.business_date,
+      entryType: 'refund',
+      sourceType: 'refund',
+      sourceId: r.id,
+      sourceEventId: event.id,
+      description: `${r.treatment === 'sales_return' ? 'Sales return' : 'Deposit refund'}: order #${r.order_number}`,
+      postings: refundPostings({
+        method: r.method as 'card' | 'cash',
+        treatment: r.treatment as 'deposit_release' | 'sales_return',
+        amountCents: r.amount_cents,
+        cashRoundingCents: r.cash_rounding_cents,
+        orderTotalCents: r.total_cents,
+        orderTaxCents: r.tax_cents,
+        // Captured under the payment lock when the refund was made (not inferred from ids or clocks).
+        previouslyRefundedCents: r.refunded_before_cents,
+      }),
+    });
   }
 
   private async paymentCaptured(tx: Tx, event: ConsumedEvent): Promise<void> {

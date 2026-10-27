@@ -227,10 +227,12 @@ export const OrderViewSchema = z.object({
       tenderedCents: cents.nullable(),
       changeCents: cents.nullable(),
       cashRoundingCents: cents,
+      refundedCents: cents,
     })
     .nullable(),
   lines: z.array(OrderLineViewSchema),
   discount: z.lazy(() => OrderDiscountViewSchema).nullable(),
+  refunds: z.array(z.lazy(() => RefundViewSchema)),
   tasks: z.array(
     z.object({
       id: uuid,
@@ -612,9 +614,44 @@ export const LedgerReconciliationSchema = z.object({
   /** GST on orders handed over vs GST payable posted. */
   completedOrdersGstCents: cents,
   journalGstCents: cents,
+  /** Refunds made that business day vs refund amounts posted to the journal. */
+  refundsCents: cents,
+  journalRefundsCents: cents,
   /** Events for this restaurant the ledger has not processed yet. */
   pendingEvents: z.number().int(),
   deadLetteredEvents: z.number().int(),
   reconciled: z.boolean(),
 });
 export type LedgerReconciliation = z.infer<typeof LedgerReconciliationSchema>;
+
+// ---------------------------------------------------------------- refunds
+
+export const REFUND_REASONS = [
+  'cancelled_order',
+  'order_error',
+  'quality',
+  'customer_complaint',
+  'duplicate_charge',
+  'other',
+] as const;
+
+export const RefundRequestSchema = z.object({
+  /** Cents to refund; defaults to everything still refundable on the payment. */
+  amountCents: z.number().int().min(1).max(10_000_000).optional(),
+  reason: z.enum(REFUND_REASONS),
+  note: z.string().trim().max(500).optional(),
+});
+export type RefundRequest = z.input<typeof RefundRequestSchema>;
+
+export const RefundViewSchema = z.object({
+  id: uuid,
+  method: z.enum(['card', 'cash']),
+  amountCents: cents,
+  /** Cash actually handed back (amount plus cash rounding). */
+  cashReturnedCents: cents.nullable(),
+  treatment: z.enum(['deposit_release', 'sales_return']),
+  reason: z.enum(REFUND_REASONS),
+  requestedBy: z.string(),
+  createdAt: z.string(),
+});
+export type RefundView = z.infer<typeof RefundViewSchema>;

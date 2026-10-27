@@ -57,6 +57,9 @@ export class LiveEventsService implements OnModuleInit, OnApplicationShutdown {
     const client = new pg.Client({
       connectionString: this.config.DATABASE_URL,
       application_name: 'kitchos-live-events',
+      // A half-open LISTEN socket would silently stop delivering; keepalive surfaces it as an error -> reconnect.
+      keepAlive: true,
+      keepAliveInitialDelayMillis: 10_000,
     });
     client.on('notification', (msg) => {
       if (msg.channel !== 'kitchos_events' || !msg.payload) return;

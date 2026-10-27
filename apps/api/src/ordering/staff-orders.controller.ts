@@ -13,6 +13,7 @@ import {
 } from '@nestjs/common';
 import {
   ApplyDiscountRequestSchema,
+  RefundRequestSchema,
   CancelOrderRequestSchema,
   OrderChannelSchema,
   OrderStatusSchema,
@@ -34,6 +35,7 @@ import type { Permission } from '../auth/permissions.ts';
 import { requireIdempotencyKey } from '../infra/idempotency.ts';
 import { UuidParam, ZodPipe } from '../infra/zod.ts';
 import { DiscountsService } from './discounts.service.ts';
+import { RefundsService } from './refunds.service.ts';
 import { OrdersService } from './orders.service.ts';
 
 const ListQuery = z.object({
@@ -52,7 +54,31 @@ export class StaffOrdersController {
   constructor(
     @Inject(OrdersService) private readonly orders: OrdersService,
     @Inject(DiscountsService) private readonly discounts: DiscountsService,
+    @Inject(RefundsService) private readonly refunds: RefundsService,
   ) {}
+
+  /** Refund (part of) the captured payment of a handed-over or cancelled order. */
+  @Post(':orderId/refunds')
+  @RequirePermission('payments.refund')
+  async refund(
+    @Param('restaurantId', UuidParam) restaurantId: string,
+    @Param('orderId', UuidParam) orderId: string,
+    @Body(new ZodPipe(RefundRequestSchema)) body: z.output<typeof RefundRequestSchema>,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Principal() p: StaffPrincipal,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<OrderView> {
+    const key = requireIdempotencyKey(idempotencyKey);
+    const result = await this.refunds.refund(
+      { orgId: p.orgId, restaurantId, userId: p.userId },
+      orderId,
+      body,
+      key,
+    );
+    res.status(result.status);
+    if (result.replayed) res.setHeader('Idempotent-Replayed', 'true');
+    return result.body;
+  }
 
   /** Apply a discount to an unpaid order (self-approved within limits, else needs approval). */
   @Post(':orderId/discount')

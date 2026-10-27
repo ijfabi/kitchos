@@ -1,4 +1,4 @@
-import { type DynamicModule, Module } from '@nestjs/common';
+﻿import { type DynamicModule, Module } from '@nestjs/common';
 import type { Database } from '@kitchos/database';
 import type pg from 'pg';
 import type { Logger } from 'pino';
@@ -27,6 +27,7 @@ import { PublicOrdersController } from './ordering/public-orders.controller.ts';
 import { DiscountsService } from './ordering/discounts.service.ts';
 import { OrdersService } from './ordering/orders.service.ts';
 import { OverridesController } from './ordering/overrides.controller.ts';
+import { RefundsService } from './ordering/refunds.service.ts';
 import { StaffOrdersController } from './ordering/staff-orders.controller.ts';
 
 export interface AppDependencies {
@@ -73,6 +74,7 @@ export class AppModule {
         KitchenService,
         OrdersService,
         DiscountsService,
+        RefundsService,
         LiveEventsService,
         LedgerService,
         LedgerConsumer,

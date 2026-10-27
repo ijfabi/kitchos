@@ -395,6 +395,7 @@ export interface Payments {
   provider: string;
   provider_reference: string | null;
   received_by: string | null;
+  refunded_cents: Generated<ColumnType<number, number | bigint, number | bigint>>;
   restaurant_id: string;
   status: string;
   tendered_cents: ColumnType<number, number | bigint, number | bigint> | null;
@@ -451,6 +452,24 @@ export interface RecipeVersions {
   station_type: string;
   status: Generated<string>;
   version: number;
+}
+
+export interface Refunds {
+  amount_cents: ColumnType<number, number | bigint, number | bigint>;
+  cash_rounding_cents: Generated<ColumnType<number, number | bigint, number | bigint>>;
+  created_at: Generated<Timestamp>;
+  id: Generated<string>;
+  method: string;
+  note: string | null;
+  order_id: string;
+  org_id: string;
+  payment_id: string;
+  provider_reference: string | null;
+  reason: string;
+  refunded_before_cents: ColumnType<number, number | bigint, number | bigint>;
+  requested_by: string;
+  restaurant_id: string;
+  treatment: string;
 }
 
 export interface Regions {
@@ -682,6 +701,7 @@ export interface DB {
   recipe_lines: RecipeLines;
   recipe_versions: RecipeVersions;
   recipes: Recipes;
+  refunds: Refunds;
   regions: Regions;
   restaurant_event_sequences: RestaurantEventSequences;
   restaurant_order_counters: RestaurantOrderCounters;

@@ -195,6 +195,13 @@ export class AccountingController {
         .executeTakeFirstOrThrow();
       const net = await this.sumByKey(tx, restaurantId, day, 'sale_recognition');
       const receipts = await this.sumByKey(tx, restaurantId, day, 'payment_receipt');
+      const refundEntries = await this.sumByKey(tx, restaurantId, day, 'refund');
+      const refunds = await tx
+        .selectFrom('refunds')
+        .select((x) => x.fn.coalesce(x.fn.sum<number>('amount_cents'), sql<number>`0`).as('cents'))
+        .where('restaurant_id', '=', restaurantId)
+        .where(sql<boolean>`app.business_date(restaurant_id, created_at) = ${day}::date`)
+        .executeTakeFirstOrThrow();
       const backlog = await tx
         .selectFrom('outbox_events as o')
         .leftJoin('inbox_events as i', (j) =>
@@ -225,6 +232,13 @@ export class AccountingController {
         journalReceiptsCents: receipts.get('customer_deposits') ?? 0,
         completedOrdersGstCents: num(orders.gst),
         journalGstCents: net.get('gst_payable') ?? 0,
+        refundsCents: num(refunds.cents),
+        // Refund entries debit deposits (cancelled orders) or returns + GST (handed-over orders).
+        journalRefundsCents: -(
+          (refundEntries.get('customer_deposits') ?? 0) +
+          (refundEntries.get('sales_returns') ?? 0) +
+          (refundEntries.get('gst_payable') ?? 0)
+        ),
         pendingEvents: num(backlog.pending),
         deadLetteredEvents: num(backlog.dead),
       };
@@ -234,6 +248,7 @@ export class AccountingController {
           result.completedOrdersNetCents === result.journalNetSalesCents &&
           result.capturedPaymentsCents === result.journalReceiptsCents &&
           result.completedOrdersGstCents === result.journalGstCents &&
+          result.refundsCents === result.journalRefundsCents &&
           result.pendingEvents === 0 &&
           result.deadLetteredEvents === 0,
       };

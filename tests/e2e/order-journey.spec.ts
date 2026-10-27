@@ -111,3 +111,42 @@ test('the manager sees the journal posted from those sales, balanced and reconci
   await expect(page.getByText('Sale recognised').first()).toBeVisible();
   await page.screenshot({ path: 'test-results/screens/10-books.png', fullPage: true });
 });
+
+test('a manager refunds part of a finished order and the books show it, still reconciled', async ({
+  browser,
+}) => {
+  const context = await browser.newContext({ viewport: { width: 1366, height: 900 } });
+  const page = await context.newPage();
+  await page.goto('/staff');
+  await page.getByLabel('Email').fill('manager@central.kitchos.test');
+  await page.getByLabel('Password').fill('kitchos-demo-pass');
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await page.getByRole('link', { name: 'Orders & refunds' }).first().click();
+  await expect(page.getByRole('heading', { name: 'Orders & refunds' })).toBeVisible();
+
+  // Pick a refundable order with no refunds yet, and assert only within that order's card.
+  const card = page
+    .getByTestId('order-card')
+    .filter({ has: page.getByRole('button', { name: 'Refund', exact: true }) })
+    .filter({ hasNotText: 'card refund' })
+    .first();
+  const orderNumber = await card.getAttribute('data-order-number');
+  const target = page.locator(`[data-testid="order-card"][data-order-number="${orderNumber}"]`);
+  await target.getByRole('button', { name: 'Refund', exact: true }).click();
+  const form = target.getByRole('form', { name: /Refund order/ });
+  await form.getByLabel('Refund amount').fill('2.00');
+  await form.getByLabel('Refund reason').selectOption('quality');
+  await form.getByRole('button', { name: 'Refund $2.00' }).click();
+  await expect(target.getByText(/\$2\.00 card refund \(quality\)/)).toBeVisible();
+  await expect(target.getByText('Refunded $2.00')).toBeVisible();
+  await page.screenshot({ path: 'test-results/screens/11-refund.png', fullPage: true });
+
+  await page.goto('/staff');
+  await page.getByRole('link', { name: 'Books' }).first().click();
+  await expect(page.getByText(/^(Sales return|Deposit refund): order/).first()).toBeVisible({
+    timeout: 20_000,
+  });
+  await expect(page.getByTestId('reconciliation-status')).toHaveText('Reconciled', {
+    timeout: 20_000,
+  });
+});

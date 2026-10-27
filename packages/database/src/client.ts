@@ -38,8 +38,16 @@ export function createDb({
     connectionString,
     max,
     application_name: applicationName,
+    // Server-side limits.
     statement_timeout: 10_000,
     idle_in_transaction_session_timeout: 30_000,
+    // Detect half-open connections (network blip, host sleep/resume) with TCP
+    // keepalive, and never wait forever for a pooled connection. (A client-side
+    // query_timeout is deliberately not used: node-postgres would return the
+    // timed-out socket to the pool.)
+    connectionTimeoutMillis: 10_000,
+    keepAlive: true,
+    keepAliveInitialDelayMillis: 10_000,
   });
   const db = new Kysely<DB>({ dialect: new PostgresDialect({ pool }) });
   return { db, pool };
