@@ -1,5 +1,57 @@
 # Progress log
 
+## Milestone 6 — Double-entry journal fed by the event dispatcher (2026-10-27)
+
+### Implemented
+
+- Migration `0006_ledger`: per-tenant chart of accounts (stable system keys, default chart via
+  `app.create_default_chart`), accounting periods, append-only `journal_entries` / `journal_lines`
+  with a deferred constraint trigger that rejects unbalanced entries, a closed-period trigger,
+  lines insertable only by the transaction that created their entry, one entry per
+  (source, entry type); `event_consumer_failures`; `app.orgs_with_pending_events` (definer
+  function returning tenant ids only, PUBLIC execute revoked); dispatcher index.
+- Domain: `paymentReceiptPostings`, `saleRecognitionPostings` (deposits before handover; revenue,
+  discounts ex GST and GST at handover; cash rounding) — property-tested to balance and net to
+  total − GST.
+- API: `EventDispatcher` (per tenant inside `withTenant`; each attempt holds the outbox row lock,
+  re-checks backoff, claims + handles inside a savepoint, forces deferred checks, records failures
+  in the same transaction; exponential backoff; dead letter after 5 attempts; per-tenant error
+  isolation), `LedgerConsumer`, `LedgerService`; accounting endpoints for business date,
+  journal, trial balance and reconciliation.
+- Books screen with reconciliation status, day-activity trial balance and journal; Playwright
+  check that a real sale appears balanced and reconciled.
+- ADR-0013 (resolves R-004).
+
+### Independent review and testing (subagents)
+
+- **Adversarial testing** (`accounting-adversarial.test.ts`, 11 scenarios incl. two app
+  instances dispatching concurrently, replay storms, rounding, comps, cancel-after-payment,
+  closed periods, tenant joins): **no ledger defects found**.
+- **Code review** found and I fixed: lines could be appended to an already-posted entry (even
+  in a closed period); multiple replicas could burn retry attempts and dead-letter early because
+  the failure was recorded after the lock was released (both testers flagged this); the
+  reconciliation backlog ignored the selected day and double-counted dead letters; one tenant's
+  error could abort the pass for all; the definer function was executable by PUBLIC; no index for
+  the dispatcher scan; inactive accounts with postings would drop out of the trial balance.
+- Fixing the dispatcher surfaced a missing DELETE grant (clearing failure rows on success); the
+  failure path recorded it correctly, which is how it was found.
+
+### Tests executed
+
+| Suite                                | Result                      |
+| ------------------------------------ | --------------------------- |
+| `@kitchos/domain`                    | 35/35 passed                |
+| `@kitchos/api` integration           | 88/88 passed (×2, shuffled) |
+| Playwright (4 journeys)              | 4/4 passed                  |
+| ESLint / Prettier / tsc (5 packages) | clean                       |
+| `next build`                         | succeeded                   |
+
+### Not done
+
+COGS/waste postings, refunds/reversals (deposits of cancelled paid orders remain — R-016), till
+sessions, shift close, period-close UI, dead-letter requeue (R-017), external bus relay.
+Migration 0006 was amended before ever being committed or deployed.
+
 ## Milestone 5 — POS discounts and manager overrides (2026-10-27)
 
 ### Implemented

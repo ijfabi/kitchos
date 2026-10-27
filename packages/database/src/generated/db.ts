@@ -26,6 +26,28 @@ export type Numeric = ColumnType<string, number | string, number | string>;
 
 export type Timestamp = ColumnType<Date, Date | string, Date | string>;
 
+export interface AccountingPeriods {
+  closed_at: Timestamp | null;
+  closed_by: string | null;
+  id: Generated<string>;
+  org_id: string;
+  period_end: string;
+  period_start: string;
+  status: Generated<string>;
+}
+
+export interface Accounts {
+  active: Generated<boolean>;
+  code: string;
+  created_at: Generated<Timestamp>;
+  id: Generated<string>;
+  name: string;
+  normal_balance: string;
+  org_id: string;
+  system_key: string | null;
+  type: string;
+}
+
 export interface AuditLog {
   action: string;
   actor_device_id: string | null;
@@ -68,6 +90,17 @@ export interface Devices {
   restaurant_id: string;
   station_id: string | null;
   status: Generated<string>;
+}
+
+export interface EventConsumerFailures {
+  attempts: number;
+  consumer: string;
+  dead_at: Timestamp | null;
+  event_id: string;
+  last_error: string;
+  next_attempt_at: Timestamp;
+  org_id: string;
+  updated_at: Generated<Timestamp>;
 }
 
 export interface GoodsReceiptLines {
@@ -119,6 +152,31 @@ export interface InventoryItems {
   org_id: string;
   sku: string;
   standard_unit_cost: Generated<Numeric>;
+}
+
+export interface JournalEntries {
+  business_date: string;
+  created_txid: Generated<string>;
+  description: string;
+  entry_type: string;
+  id: Generated<string>;
+  org_id: string;
+  posted_at: Generated<Timestamp>;
+  restaurant_id: string;
+  reverses_entry_id: string | null;
+  source_event_id: string | null;
+  source_id: string;
+  source_type: string;
+}
+
+export interface JournalLines {
+  account_id: string;
+  credit_cents: Generated<ColumnType<number, number | bigint, number | bigint>>;
+  debit_cents: Generated<ColumnType<number, number | bigint, number | bigint>>;
+  entry_id: string;
+  id: Generated<string>;
+  memo: string | null;
+  org_id: string;
 }
 
 export interface KitchenTasks {
@@ -589,15 +647,20 @@ export interface WasteRecords {
 }
 
 export interface DB {
+  accounting_periods: AccountingPeriods;
+  accounts: Accounts;
   audit_log: AuditLog;
   brands: Brands;
   combo_components: ComboComponents;
   devices: Devices;
+  event_consumer_failures: EventConsumerFailures;
   goods_receipt_lines: GoodsReceiptLines;
   goods_receipts: GoodsReceipts;
   idempotency_keys: IdempotencyKeys;
   inbox_events: InboxEvents;
   inventory_items: InventoryItems;
+  journal_entries: JournalEntries;
+  journal_lines: JournalLines;
   kitchen_tasks: KitchenTasks;
   manager_overrides: ManagerOverrides;
   menu_items: MenuItems;

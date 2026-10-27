@@ -92,16 +92,15 @@ describe('POS: staff order entry, cash and card tender, park / recall / void', (
     expect(row.created_by_user_id).toBe(crewUser.id);
     const payment = await h.owner
       .selectFrom('payments')
-      .select(['received_by', 'provider'])
+      .select(['id', 'received_by', 'provider'])
       .where('order_id', '=', order.id)
       .executeTakeFirstOrThrow();
-    expect(payment).toEqual({ received_by: crewUser.id, provider: 'cash' });
+    expect(payment).toMatchObject({ received_by: crewUser.id, provider: 'cash' });
     const evt = await h.owner
       .selectFrom('outbox_events')
       .select('payload')
       .where('event_type', '=', 'payment.captured')
-      .where('aggregate_type', '=', 'payment')
-      .orderBy('store_sequence', 'desc')
+      .where('aggregate_id', '=', payment.id)
       .executeTakeFirstOrThrow();
     expect(evt.payload).toMatchObject({
       orderId: order.id,

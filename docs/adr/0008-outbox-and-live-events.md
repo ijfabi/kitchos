@@ -1,6 +1,6 @@
 # ADR-0008: Transactional outbox, store sequencing and live fan-out
 
-- Status: Accepted (2026-10-26); relay implementation pending
+- Status: Accepted (2026-10-26). In-process dispatch implemented by ADR-0013 (2026-10-27); external relay pending
 
 ## Decision
 

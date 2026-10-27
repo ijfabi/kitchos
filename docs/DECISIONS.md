@@ -29,4 +29,7 @@ Architecture decisions are recorded as ADRs in `docs/adr/`. Smaller decisions ar
 | ADR-0012 | Discounts with self-approval limits; manager overrides bound to the exact discount                                 | 2026-10-27 |
 | D-013    | Password-guessing budget is per account (IP-independent), counts failures only, shared by sign-in and overrides    | 2026-10-27 |
 | D-014    | A fully discounted order is accepted immediately (no payment row); stock is consumed as usual                      | 2026-10-27 |
+| ADR-0013 | Journal fed by an RLS-preserving in-process event dispatcher; revenue at handover, deposits before                 | 2026-10-27 |
+| D-015    | Each delivery attempt holds the event lock end to end; failures are recorded in the same transaction               | 2026-10-27 |
+| D-016    | Journal lines may only be inserted by the transaction that created their entry                                     | 2026-10-27 |
 | D-005    | Demo seed uses one shared dev password for all synthetic accounts (local only)                                     | 2026-10-26 |

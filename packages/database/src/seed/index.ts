@@ -57,6 +57,7 @@ async function seedDemoOrg(db: Database, log: (m: string) => void): Promise<void
     .returning('id')
     .executeTakeFirstOrThrow();
   const orgId = org.id;
+  await sql`select app.create_default_chart(${orgId}::uuid)`.execute(db);
   const brand = await db
     .insertInto('brands')
     .values({ org_id: orgId, name: 'KitchOS', slug: 'kitchos' })
@@ -402,6 +403,7 @@ async function seedRivalOrg(db: Database, log: (m: string) => void): Promise<voi
     .values({ name: 'Rival Foods Pty Ltd', slug: RIVAL_ORG_SLUG })
     .returning('id')
     .executeTakeFirstOrThrow();
+  await sql`select app.create_default_chart(${org.id}::uuid)`.execute(db);
   const brand = await db
     .insertInto('brands')
     .values({ org_id: org.id, name: 'Rival Burgers', slug: 'rival-burgers' })

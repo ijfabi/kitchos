@@ -89,3 +89,25 @@ test('customer order flows through the kitchen to handoff, live', async ({ brows
     fullPage: true,
   });
 });
+
+test('the manager sees the journal posted from those sales, balanced and reconciled', async ({
+  browser,
+}) => {
+  const context = await browser.newContext({ viewport: { width: 1366, height: 900 } });
+  const page = await context.newPage();
+  await page.goto('/staff');
+  await page.getByLabel('Email').fill('manager@central.kitchos.test');
+  await page.getByLabel('Password').fill('kitchos-demo-pass');
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await page.getByRole('link', { name: 'Books' }).first().click();
+  await expect(page.getByRole('heading', { name: 'Books' })).toBeVisible();
+  // The API's in-process dispatcher posts within a few seconds; the page refreshes itself.
+  await expect(page.getByTestId('trial-balance-status')).toHaveText('Balanced', {
+    timeout: 20_000,
+  });
+  await expect(page.getByTestId('reconciliation-status')).toHaveText('Reconciled', {
+    timeout: 20_000,
+  });
+  await expect(page.getByText('Sale recognised').first()).toBeVisible();
+  await page.screenshot({ path: 'test-results/screens/10-books.png', fullPage: true });
+});

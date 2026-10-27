@@ -49,7 +49,11 @@ approval, standard-cost valuation.
 Next: waste + inventory UI, transfers between stores, lots & expiry, unit conversions, moving-
 average valuation, batch production, low-stock alerts, theoretical vs actual usage report.
 
-## Phase 3 — Finance and management ⬜
+## Phase 3 — Finance and management 🟡
+
+Done (Milestone 6): in-process event dispatcher; double-entry journal with DB-enforced balance,
+append-only and closed-period rules; payment and sale-recognition postings; trial balance,
+journal and reconciliation views (Books screen).
 
 Double-entry journal (immutable, balanced, reversals), posting rules from outbox events via an
 idempotent consumer, refunds and payment reversal, cash drawers and till sessions, shift and
@@ -85,7 +89,7 @@ reliability drills, deployment docs, measured benchmark report.
 
 ## Immediate next tasks
 
-1. Outbox relay worker + first idempotent consumer (double-entry journal postings for sales,
-   discounts, payments, cash rounding) — opens Phase 3.
-2. Till sessions / cash drawers, then refunds and payment reversal on the journal.
-3. Inventory and waste UI for crew and managers.
+1. Refunds and payment reversal (clears customer deposits; reversing journal entries).
+2. Till sessions / cash drawers with blind counts, feeding shift close.
+3. Inventory valuation postings (COGS on consumption, waste expense, reclassification).
+4. Inventory and waste UI for crew and managers.

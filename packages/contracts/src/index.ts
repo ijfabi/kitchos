@@ -556,3 +556,65 @@ export const OrderDiscountViewSchema = z.object({
   viaOverride: z.boolean(),
 });
 export type OrderDiscountView = z.infer<typeof OrderDiscountViewSchema>;
+
+// ---------------------------------------------------------------- accounting
+
+export const JournalEntryViewSchema = z.object({
+  id: uuid,
+  businessDate: z.string(),
+  entryType: z.string(),
+  description: z.string(),
+  sourceType: z.string(),
+  sourceId: uuid,
+  postedAt: z.string(),
+  lines: z.array(
+    z.object({
+      accountCode: z.string(),
+      accountName: z.string(),
+      debitCents: cents,
+      creditCents: cents,
+      memo: z.string().nullable(),
+    }),
+  ),
+});
+export type JournalEntryView = z.infer<typeof JournalEntryViewSchema>;
+
+export const TrialBalanceSchema = z.object({
+  from: z.string(),
+  to: z.string(),
+  accounts: z.array(
+    z.object({
+      code: z.string(),
+      name: z.string(),
+      type: z.string(),
+      debitCents: cents,
+      creditCents: cents,
+      /** Positive = balance on the account's normal side. */
+      balanceCents: cents,
+    }),
+  ),
+  totalDebitCents: cents,
+  totalCreditCents: cents,
+  balanced: z.boolean(),
+});
+export type TrialBalance = z.infer<typeof TrialBalanceSchema>;
+
+export const LedgerReconciliationSchema = z.object({
+  businessDate: z.string(),
+  /** Σ(total − GST) of orders handed over that business day. */
+  completedOrdersNetCents: cents,
+  /** Net sales posted to the journal (revenue − discounts) for that day. */
+  journalNetSalesCents: cents,
+  /** Σ captured payments that business day. */
+  capturedPaymentsCents: cents,
+  /** Customer deposits credited by payment receipts that day. */
+  journalReceiptsCents: cents,
+  /** GST on orders handed over vs GST payable posted. */
+  completedOrdersGstCents: cents,
+  journalGstCents: cents,
+  /** Events for this restaurant the ledger has not processed yet. */
+  pendingEvents: z.number().int(),
+  deadLetteredEvents: z.number().int(),
+  reconciled: z.boolean(),
+});
+export type LedgerReconciliation = z.infer<typeof LedgerReconciliationSchema>;

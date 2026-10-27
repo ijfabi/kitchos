@@ -7,6 +7,8 @@ const ConfigSchema = z.object({
   CORS_ORIGINS: z.string().default('http://localhost:3100'),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  /** How often the in-process event dispatcher runs; 0 disables it (tests drive it directly). */
+  EVENT_DISPATCH_INTERVAL_MS: z.coerce.number().int().min(0).default(2000),
 });
 
 export type AppConfig = z.infer<typeof ConfigSchema>;

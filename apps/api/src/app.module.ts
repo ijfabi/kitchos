@@ -2,12 +2,16 @@ import { type DynamicModule, Module } from '@nestjs/common';
 import type { Database } from '@kitchos/database';
 import type pg from 'pg';
 import type { Logger } from 'pino';
+import { AccountingController } from './accounting/accounting.controller.ts';
+import { LedgerConsumer } from './accounting/ledger.consumer.ts';
+import { LedgerService } from './accounting/ledger.service.ts';
 import { AuthController } from './auth/auth.controller.ts';
 import { StaffAuthGuard } from './auth/auth.guard.ts';
 import { AuthService } from './auth/auth.service.ts';
 import { CatalogController } from './catalog/catalog.controller.ts';
 import { MenuRepository } from './catalog/menu.repository.ts';
 import { APP_CONFIG, type AppConfig } from './config.ts';
+import { EventDispatcher } from './events/event-dispatcher.service.ts';
 import { LiveEventsController } from './events/live-events.controller.ts';
 import { LiveEventsService } from './events/live-events.service.ts';
 import { HealthController } from './health/health.controller.ts';
@@ -53,6 +57,7 @@ export class AppModule {
         InventoryController,
         StockOperationsController,
         LiveEventsController,
+        AccountingController,
       ],
       providers: [
         { provide: APP_CONFIG, useValue: deps.config },
@@ -69,6 +74,9 @@ export class AppModule {
         OrdersService,
         DiscountsService,
         LiveEventsService,
+        LedgerService,
+        LedgerConsumer,
+        EventDispatcher,
       ],
     };
   }

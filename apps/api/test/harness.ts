@@ -24,6 +24,7 @@ export async function startHarness(): Promise<Harness> {
     AUTH_JWT_SECRET: 'test-secret-that-is-at-least-32-characters',
     NODE_ENV: 'test',
     LOG_LEVEL: 'silent',
+    EVENT_DISPATCH_INTERVAL_MS: '0',
   });
   const created = await createApp(config);
   const { db: owner } = createDb({ connectionString: inject('ownerUrl'), max: 4 });
