@@ -7,6 +7,7 @@ import { EventDispatcher, MAX_ATTEMPTS } from '../src/events/event-dispatcher.se
 import {
   balance,
   bearer,
+  ensureDrawer,
   getMenu,
   item,
   login,
@@ -58,6 +59,7 @@ describe('ledger under adversarial conditions', () => {
     manager = await login(h, 'manager@central.kitchos.test');
     driveManager = await login(h, 'manager@drive.kitchos.test');
     rivalManager = await login(h, 'manager@rival.test');
+    for (const t of [crew, supervisor, manager]) await ensureDrawer(h, t, CENTRAL);
     // Start from a drained queue so deltas below are attributable to this file.
     await dispatcher.runOnce();
   });

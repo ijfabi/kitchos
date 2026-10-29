@@ -1,5 +1,93 @@
 # Progress log
 
+## Milestone 8 — Cash drawers, till sessions and blind counts (2026-10-30)
+
+### Implemented
+
+- Migration `0008_cash_drawers`:
+  - Tables `cash_drawers`, `drawer_sessions` (count snapshot, approval, version) and append-only
+    `drawer_movements`.
+  - `payments`/`refunds.drawer_session_id`.
+  - Partial unique indexes: one active session per drawer and per person.
+  - Trigger `app.require_open_drawer_session`: cash needs an open session in the same restaurant.
+  - `restaurants.cash_variance_threshold_cents` (default 500).
+  - Drawer journal entry types.
+  - Accounts: Cash in safe (1020), Cash over/short (6100), Petty cash (6200).
+  - RLS and least-privilege grants.
+  - Seeded drawers: 4 per demo restaurant (Express 2, Rival 1).
+- Domain: `expectedDrawerCash`, plus float, movement and close postings. A property test checks
+  that cash on hand nets to zero.
+- API under `/v1/restaurants/:id/cash`:
+  - Drawers: list, open.
+  - Sessions: list (defaults to today's business date, plus anything still open or pending), get.
+  - Movements and blind count (both idempotent), and variance approval.
+  - New permissions: `cash.drawer` (crew) and `cash.manage` (supervisor and up).
+- Cash payments and cash refunds now go through the actor's own open drawer session.
+- The ledger consumer posts `drawer.opened`, `drawer.movement_recorded` and `drawer.closed`.
+- UI:
+  - POS drawer panel: open with a float, safe drop, paid in, paid out (managers), blind count and
+    close. Cash is disabled without an open drawer.
+  - New Cash drawers page (`/cash/:id`): expected, counted and variance per session, and variance
+    approval.
+  - Books labels the new entry types.
+- ADR-0015; resolves R-012.
+
+### Independent review and testing (subagents)
+
+The reviewer and the adversarial tester found the same three defects, and the tester reproduced
+them. All are fixed, with regression tests:
+
+1. One person could open two drawers concurrently. Now a unique index, mapped to 409
+   `ALREADY_HAVE_DRAWER`.
+2. Replaying a manager's movement key returned the manager's view, including expected cash, to a
+   blind cashier. Replays are now re-rendered for the caller.
+3. Two concurrent cash refunds through one drawer both passed the available-cash check (FOR SHARE
+   lock), and expected cash went to −880c. Refunds now lock the session FOR UPDATE.
+
+Also fixed from the review:
+
+- The `NOT VALID` cash ⇒ session CHECKs would have blocked refunds of pre-drawer cash payments
+  (Postgres re-checks on UPDATE). Replaced by the INSERT trigger, with a regression test.
+- The safe-drop 422 let a blind cashier binary-search expected cash. The check now applies only to
+  actors who can see expected cash.
+- A supervisor saw expected cash on their own till and could approve a variance on their own
+  drawer when someone else counted it. Now their own till is blind, and the approver must be
+  neither the cashier nor the counter (service and CHECK).
+
+A mutation check showed that removing the payment's FOR SHARE lock went unnoticed by the
+concurrent race test. A deterministic test now holds the count's row lock while a payment is in
+flight.
+
+The adversarial suite holds, 24 scenarios in all:
+
+- Opens racing for the same drawer, and concurrent safe drops; exactly the affordable ones
+  succeed.
+- Idempotency abuse, and count replay after close.
+- Racing counts and racing approvals, with exactly one close event and one journal entry.
+- Threshold boundaries; blind-count leak checks on every endpoint.
+- Cross-restaurant and cross-tenant session ids; RLS for the runtime role.
+- Business-date listing; journal and trial-balance integrity.
+
+### Tests executed
+
+| Suite                                | Result                                                    |
+| ------------------------------------ | --------------------------------------------------------- |
+| `@kitchos/domain`                    | 43/43 passed                                              |
+| `@kitchos/api` integration           | 141/141 passed (×2, shuffled; 14 files)                   |
+| Mutation checks (cash drawer rules)  | 11 mutants, 10 killed; 1 survivor (409 code on open race) |
+| Playwright (6 journeys)              | 6/6 passed                                                |
+| ESLint / Prettier / tsc (5 packages) | clean                                                     |
+| `next build`                         | succeeded                                                 |
+
+The surviving mutant only changes which 409 code the loser of a same-person open race receives.
+The invariant itself is covered deterministically at the database level.
+
+### Not done
+
+- No drawer admin API (drawers are seeded).
+- Cash per business date does not net to zero for sessions that cross midnight (ADR-0015).
+- Shift and business-day close, COGS/waste postings, split tender, gift cards.
+
 ## Milestone 7 — Refunds and payment reversal (2026-10-27)
 
 ### Implemented

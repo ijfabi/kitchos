@@ -28,6 +28,7 @@ import { ApiException, forbidden, notFound } from '../infra/http-errors.ts';
 import { idempotent, type IdempotentResult } from '../infra/idempotency.ts';
 import { DB } from '../infra/tokens.ts';
 import { InventoryService, type Actor } from '../inventory/inventory.service.ts';
+import { resolveCashSession } from '../cash/cash-drawer.service.ts';
 import { KitchenService, routeToStation } from '../kitchen/kitchen.service.ts';
 
 export interface PlaceOrderInput {
@@ -383,6 +384,14 @@ export class OrdersService {
               .where('id', '=', order.restaurant_id)
               .executeTakeFirstOrThrow();
             const cash = settleCash(order.total_cents, args.tender.tenderedCents, increment);
+            // Cash always belongs to the cashier's open drawer session.
+            if (!args.actor.userId)
+              throw new ApiException(403, 'FORBIDDEN', 'Cash requires a signed-in cashier');
+            const drawerSessionId = await resolveCashSession(tx, {
+              restaurantId: order.restaurant_id,
+              userId: args.actor.userId,
+              explicitId: args.tender.drawerSessionId,
+            });
             outcome = 'captured';
             paymentStateMachine.assertTransition('pending', outcome);
             payment = await tx
@@ -392,6 +401,7 @@ export class OrdersService {
                 method: 'cash',
                 provider: 'cash',
                 status: outcome,
+                drawer_session_id: drawerSessionId,
                 tendered_cents: cash.tenderedCents,
                 change_cents: cash.changeCents,
                 cash_rounding_cents: cash.roundingCents,

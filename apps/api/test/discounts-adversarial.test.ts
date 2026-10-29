@@ -3,6 +3,7 @@ import type { OrderView } from '@kitchos/contracts';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   bearer,
+  ensureDrawer,
   getMenu,
   item,
   login,
@@ -47,6 +48,9 @@ describe('discounts and overrides (adversarial)', () => {
     centralId = await restaurantId(h, CENTRAL);
     driveId = await restaurantId(h, 'kitchos-drive');
     mealId = item(await getMenu(h, CENTRAL), 'Cheeseburger Meal').id; // 1290c
+    for (const email of ['crew1@central.kitchos.test', SUPERVISOR]) {
+      await ensureDrawer(h, await tok(email), CENTRAL);
+    }
   });
 
   afterAll(async () => {

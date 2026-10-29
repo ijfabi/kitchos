@@ -12,6 +12,17 @@ test('crew rings up a cash sale with change, then parks, recalls and card-pays a
   await page.getByRole('link', { name: 'Point of sale' }).click();
   await expect(page.getByRole('heading', { name: 'Point of sale' })).toBeVisible();
 
+  const ticket = page.getByRole('complementary', { name: 'Current order' });
+  // Cash needs the cashier's own drawer: open one with a $200 float.
+  await expect(page.getByTestId('drawer-button')).toHaveText('No drawer open');
+  await page.getByTestId('drawer-button').click();
+  const drawer = ticket.getByRole('region', { name: 'Cash drawer' });
+  await drawer.getByRole('button', { name: /Till 1/ }).click();
+  await drawer.getByLabel('Opening float').fill('200');
+  await drawer.getByRole('button', { name: 'Open drawer' }).click();
+  await expect(page.getByTestId('drawer-button')).toHaveText('Till 1');
+  await drawer.getByRole('button', { name: 'Done' }).click();
+
   const products = page.getByRole('region', { name: 'Products' });
   // Customisable item opens the modifier dialog.
   await products.getByRole('button', { name: /^Cheeseburger\s*\$7\.90/ }).click();
@@ -21,7 +32,6 @@ test('crew rings up a cash sale with change, then parks, recalls and card-pays a
   // Plain item goes straight onto the ticket.
   await products.getByRole('button', { name: /^Medium Cola/ }).click();
 
-  const ticket = page.getByRole('complementary', { name: 'Current order' });
   await expect(ticket.getByText('1 × Cheeseburger')).toBeVisible();
   await expect(ticket.getByText('No onion')).toBeVisible();
   await expect(page.getByTestId('pos-total')).toHaveText('$12.10');
@@ -49,6 +59,18 @@ test('crew rings up a cash sale with change, then parks, recalls and card-pays a
   await expect(ticket.getByText(/Paid by visa/)).toBeVisible();
   await ticket.getByRole('button', { name: 'New sale' }).click();
   await expect(ticket.locator('li', { hasText: 'Table 9' })).toHaveCount(0);
+
+  // End of shift: a blind count of float + the cash sale balances exactly and closes the drawer.
+  await page.getByTestId('drawer-button').click();
+  await drawer.getByRole('button', { name: 'Count & close' }).click();
+  await drawer.getByLabel('Counted cash').fill('212.10');
+  await drawer.getByRole('button', { name: 'Submit count' }).click();
+  const result = drawer.getByTestId('count-result');
+  await expect(result).toContainText('Expected $212.10');
+  await expect(result).toContainText('Drawer closed.');
+  await expect(page.getByTestId('drawer-button')).toHaveText('No drawer open');
+  await drawer.getByRole('button', { name: 'Done' }).click();
+  await expect(ticket.getByText('Cash needs an open drawer.')).toBeVisible();
 });
 
 test('a discount above the crew limit is approved by a manager at the terminal', async ({

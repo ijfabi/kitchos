@@ -353,6 +353,19 @@ async function seedRestaurant(db: Database, c: RestaurantSeedContext): Promise<s
     )
     .execute();
 
+  const drawerCount = r.slug === 'kitchos-express' ? 2 : 4;
+  await db
+    .insertInto('cash_drawers')
+    .values(
+      Array.from({ length: drawerCount }, (_, i) => ({
+        org_id: orgId,
+        restaurant_id: restaurant.id,
+        code: `till-${i + 1}`,
+        name: `Till ${i + 1}`,
+      })),
+    )
+    .execute();
+
   const location = await db
     .insertInto('stock_locations')
     .values({
@@ -504,6 +517,10 @@ async function seedRivalOrg(db: Database, log: (m: string) => void): Promise<voi
       name: 'Grill',
       station_types: ['grill', 'expo'],
     })
+    .execute();
+  await db
+    .insertInto('cash_drawers')
+    .values({ org_id: org.id, restaurant_id: restaurant.id, code: 'till-1', name: 'Till 1' })
     .execute();
   await db
     .insertInto('stock_locations')

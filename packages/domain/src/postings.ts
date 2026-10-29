@@ -10,7 +10,10 @@ export type SystemAccount =
   | 'sales_revenue'
   | 'sales_discounts'
   | 'sales_returns'
-  | 'cash_rounding';
+  | 'cash_rounding'
+  | 'cash_in_safe'
+  | 'cash_over_short'
+  | 'petty_cash';
 
 export interface Posting {
   readonly account: SystemAccount;

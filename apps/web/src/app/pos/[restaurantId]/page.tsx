@@ -12,6 +12,7 @@ import {
   Percent,
   RotateCcw,
   Trash2,
+  Wallet,
   X,
 } from 'lucide-react';
 import Link from 'next/link';
@@ -19,6 +20,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useMemo, useRef, useState } from 'react';
 import { ItemDialog, type CartLine } from '@/components/order/item-dialog';
 import { DiscountPanel } from '@/components/pos/discount-panel';
+import { DrawerPanel, useMyDrawer } from '@/components/pos/drawer-panel';
 import { StaffGate } from '@/components/staff-gate';
 import { Badge, Button, EmptyState, Logo, Spinner } from '@/components/ui';
 import { api, ApiError, get, newIdempotencyKey } from '@/lib/api';
@@ -55,6 +57,11 @@ function Pos({ session }: { session: StaffSession }) {
   const token = session.accessToken;
   const restaurant = session.me.restaurants.find((r) => r.id === restaurantId);
   const canVoid = restaurant?.permissions.includes('orders.cancel') ?? false;
+  const canManageCash = restaurant?.permissions.includes('cash.manage') ?? false;
+  // Cash goes through the cashier's own open drawer session.
+  const { mine: myDrawer } = useMyDrawer(restaurantId, token, session.me.user.id);
+  const drawerOpen = myDrawer?.activeSession?.status === 'open';
+  const [drawerPanel, setDrawerPanel] = useState(false);
 
   const menu = useQuery({
     queryKey: ['menu', restaurant?.slug],
@@ -248,6 +255,16 @@ function Pos({ session }: { session: StaffSession }) {
             {restaurant.name} · {session.me.user.displayName}
           </p>
         </div>
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => setDrawerPanel((v) => !v)}
+          aria-expanded={drawerPanel}
+          data-testid="drawer-button"
+        >
+          <Wallet className="size-4" aria-hidden />
+          {drawerOpen ? myDrawer!.name : myDrawer ? 'Drawer awaiting approval' : 'No drawer open'}
+        </Button>
       </header>
 
       <div className="grid min-h-0 flex-1 grid-cols-[1fr_24rem]">
@@ -449,7 +466,15 @@ function Pos({ session }: { session: StaffSession }) {
                   </p>
                 )}
 
-                {discountOpen ? (
+                {drawerPanel ? (
+                  <DrawerPanel
+                    restaurantId={restaurantId}
+                    token={token}
+                    userId={session.me.user.id}
+                    canManage={canManageCash}
+                    onClose={() => setDrawerPanel(false)}
+                  />
+                ) : discountOpen ? (
                   <DiscountPanel
                     restaurantId={restaurantId}
                     token={token}
@@ -568,11 +593,23 @@ function Pos({ session }: { session: StaffSession }) {
                     </Button>
                     <Button
                       size="xl"
-                      disabled={(!active && lines.length === 0) || busy}
+                      disabled={(!active && lines.length === 0) || busy || !drawerOpen}
+                      title={drawerOpen ? undefined : 'Open a cash drawer to take cash'}
                       onClick={() => setCashOpen(true)}
                     >
                       <Banknote className="size-5" aria-hidden /> Cash
                     </Button>
+                    {!drawerOpen && (
+                      <p className="col-span-3 text-center text-xs text-ink-muted">
+                        Cash needs an open drawer.{' '}
+                        <button
+                          className="font-semibold text-brand-strong underline"
+                          onClick={() => setDrawerPanel(true)}
+                        >
+                          Open one
+                        </button>
+                      </p>
+                    )}
                   </div>
                 )}
                 <p className="text-center text-[11px] text-ink-subtle">

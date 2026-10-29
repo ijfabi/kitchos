@@ -1,12 +1,14 @@
-﻿import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { withTenant, type Database } from '@kitchos/database';
 import type { OrderView } from '@kitchos/contracts';
 import {
   cashPayableCents,
   DomainError,
+  expectedDrawerCash,
   paymentStateMachine,
   type PaymentStatus,
 } from '@kitchos/domain';
+import { drawerFacts, resolveCashSession } from '../cash/cash-drawer.service.ts';
 import { appendEvents } from '../events/outbox.ts';
 import { audit } from '../infra/audit.ts';
 import { ApiException, notFound } from '../infra/http-errors.ts';
@@ -38,12 +40,13 @@ export interface RefundInput {
   amountCents?: number | undefined;
   reason: string;
   note?: string | undefined;
+  drawerSessionId?: string | undefined;
 }
 
 /**
  * Refunds against a captured payment. A refund is allowed once the order is
- * finished â€” handed over (a sales return) or cancelled (returning the
- * deposit) â€” and never restores stock. The payment's refunded amount can never
+ * finished — handed over (a sales return) or cancelled (returning the
+ * deposit) — and never restores stock. The payment's refunded amount can never
  * exceed what was captured; concurrent refunds serialise on the order and
  * payment rows (order first, per the lock-order convention).
  */
@@ -155,6 +158,24 @@ export class RefundsService {
                   amount,
                 ) - amount
               : 0;
+          // Cash refunds come out of the refunder's own open drawer, which must hold enough cash.
+          let drawerSessionId: string | null = null;
+          if (payment.method === 'cash') {
+            drawerSessionId = await resolveCashSession(tx, {
+              restaurantId: ctx.restaurantId,
+              userId: ctx.userId,
+              explicitId: input.drawerSessionId,
+              lock: 'update',
+            });
+            const available = expectedDrawerCash(await drawerFacts(tx, drawerSessionId));
+            if (amount + cashRounding > available) {
+              throw new ApiException(
+                422,
+                'INSUFFICIENT_DRAWER_CASH',
+                'Your drawer does not hold enough cash for this refund',
+              );
+            }
+          }
           const treatment = order.status === 'completed' ? 'sales_return' : 'deposit_release';
           const refund = await tx
             .insertInto('refunds')
@@ -167,6 +188,7 @@ export class RefundsService {
               amount_cents: amount,
               refunded_before_cents: payment.refunded_cents,
               cash_rounding_cents: cashRounding,
+              drawer_session_id: drawerSessionId,
               treatment,
               reason: input.reason,
               note: input.note ?? null,

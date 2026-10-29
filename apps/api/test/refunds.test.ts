@@ -1,4 +1,4 @@
-﻿import { randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import type { KitchenTaskView, OrderView } from '@kitchos/contracts';
 import { sql } from 'kysely';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -6,6 +6,7 @@ import { EventDispatcher } from '../src/events/event-dispatcher.service.ts';
 import {
   balance,
   bearer,
+  ensureDrawer,
   getMenu,
   item,
   login,
@@ -33,6 +34,8 @@ describe('refunds and payment reversal', () => {
     supervisor = await login(h, 'supervisor@central.kitchos.test');
     manager = await login(h, 'manager@central.kitchos.test');
     dispatcher = h.app.get(EventDispatcher);
+    // Cash payments and cash refunds go through the cashier's own drawer session.
+    for (const t of [crew, supervisor, manager]) await ensureDrawer(h, t, CENTRAL);
   });
   afterAll(() => h.close());
 
@@ -170,7 +173,7 @@ describe('refunds and payment reversal', () => {
     expect(await balance(h, CENTRAL, 'BACON')).toEqual(baconAfterCooking); // invariant 11
 
     await dispatcher.runOnce();
-    // GST 117 on 1290: first share round(500Ã—117/1290)=45, second 117âˆ’45=72.
+    // GST 117 on 1290: first share round(500×117/1290)=45, second 117−45=72.
     expect(await refundEntries(order.id)).toEqual([
       { sales_returns: 455, gst_payable: 45, card_clearing: -500 },
       { sales_returns: 718, gst_payable: 72, card_clearing: -790 },

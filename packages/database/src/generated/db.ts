@@ -70,6 +70,16 @@ export interface Brands {
   slug: string;
 }
 
+export interface CashDrawers {
+  active: Generated<boolean>;
+  code: string;
+  created_at: Generated<Timestamp>;
+  id: Generated<string>;
+  name: string;
+  org_id: string;
+  restaurant_id: string;
+}
+
 export interface ComboComponents {
   display_order: Generated<number>;
   id: Generated<string>;
@@ -90,6 +100,38 @@ export interface Devices {
   restaurant_id: string;
   station_id: string | null;
   status: Generated<string>;
+}
+
+export interface DrawerMovements {
+  amount_cents: ColumnType<number, number | bigint, number | bigint>;
+  created_at: Generated<Timestamp>;
+  id: Generated<string>;
+  kind: string;
+  org_id: string;
+  reason: string;
+  recorded_by: string;
+  session_id: string;
+}
+
+export interface DrawerSessions {
+  approved_by: string | null;
+  business_date: string;
+  close_notes: string | null;
+  closed_at: Timestamp | null;
+  counted_at: Timestamp | null;
+  counted_by: string | null;
+  counted_cents: ColumnType<number, number | bigint, number | bigint> | null;
+  drawer_id: string;
+  expected_cents: ColumnType<number, number | bigint, number | bigint> | null;
+  id: Generated<string>;
+  opened_at: Generated<Timestamp>;
+  opened_by: string;
+  opening_float_cents: ColumnType<number, number | bigint, number | bigint>;
+  org_id: string;
+  restaurant_id: string;
+  status: Generated<string>;
+  variance_cents: ColumnType<number, number | bigint, number | bigint> | null;
+  version: Generated<number>;
 }
 
 export interface EventConsumerFailures {
@@ -387,6 +429,7 @@ export interface Payments {
   cash_rounding_cents: Generated<ColumnType<number, number | bigint, number | bigint>>;
   change_cents: ColumnType<number, number | bigint, number | bigint> | null;
   created_at: Generated<Timestamp>;
+  drawer_session_id: string | null;
   failure_reason: string | null;
   id: Generated<string>;
   method: string;
@@ -458,6 +501,7 @@ export interface Refunds {
   amount_cents: ColumnType<number, number | bigint, number | bigint>;
   cash_rounding_cents: Generated<ColumnType<number, number | bigint, number | bigint>>;
   created_at: Generated<Timestamp>;
+  drawer_session_id: string | null;
   id: Generated<string>;
   method: string;
   note: string | null;
@@ -497,6 +541,7 @@ export interface Restaurants {
   brand_id: string;
   business_day_cutoff: Generated<string>;
   cash_rounding_increment_cents: Generated<number>;
+  cash_variance_threshold_cents: Generated<ColumnType<number, number | bigint, number | bigint>>;
   count_approval_threshold_cents: Generated<ColumnType<number, number | bigint, number | bigint>>;
   created_at: Generated<Timestamp>;
   currency: Generated<string>;
@@ -670,8 +715,11 @@ export interface DB {
   accounts: Accounts;
   audit_log: AuditLog;
   brands: Brands;
+  cash_drawers: CashDrawers;
   combo_components: ComboComponents;
   devices: Devices;
+  drawer_movements: DrawerMovements;
+  drawer_sessions: DrawerSessions;
   event_consumer_failures: EventConsumerFailures;
   goods_receipt_lines: GoodsReceiptLines;
   goods_receipts: GoodsReceipts;

@@ -6,7 +6,13 @@ export interface EntryInput {
   orgId: string;
   restaurantId: string;
   businessDate: string;
-  entryType: 'payment_receipt' | 'sale_recognition' | 'refund';
+  entryType:
+    | 'payment_receipt'
+    | 'sale_recognition'
+    | 'refund'
+    | 'drawer_float'
+    | 'drawer_movement'
+    | 'drawer_close';
   sourceType: string;
   sourceId: string;
   sourceEventId: string | null;

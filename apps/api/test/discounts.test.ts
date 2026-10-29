@@ -3,6 +3,7 @@ import type { OrderView } from '@kitchos/contracts';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   bearer,
+  ensureDrawer,
   getMenu,
   item,
   login,
@@ -25,6 +26,7 @@ describe('POS discounts and manager overrides', () => {
     centralId = await restaurantId(h, CENTRAL);
     crew = await login(h, 'crew1@central.kitchos.test');
     mealId = item(await getMenu(h, CENTRAL), 'Cheeseburger Meal').id;
+    await ensureDrawer(h, crew, CENTRAL);
   });
   afterAll(() => h.close());
 

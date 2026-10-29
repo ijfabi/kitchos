@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { EventDispatcher, MAX_ATTEMPTS } from '../src/events/event-dispatcher.service.ts';
 import {
   bearer,
+  ensureDrawer,
   getMenu,
   item,
   login,
@@ -29,6 +30,7 @@ describe('double-entry journal from domain events', () => {
     crew = await login(h, 'crew1@central.kitchos.test');
     manager = await login(h, 'manager@central.kitchos.test');
     dispatcher = h.app.get(EventDispatcher);
+    await ensureDrawer(h, crew, CENTRAL);
   });
   afterAll(() => h.close());
 

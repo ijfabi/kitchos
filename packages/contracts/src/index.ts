@@ -159,7 +159,12 @@ export type PayOrderRequest = z.infer<typeof PayOrderRequestSchema>;
 
 /** Payment taken by staff at a terminal: cash with tendered amount, or a sandbox card token. */
 export const StaffPaymentRequestSchema = z.discriminatedUnion('method', [
-  z.object({ method: z.literal('cash'), tenderedCents: z.number().int().min(0).max(10_000_000) }),
+  z.object({
+    method: z.literal('cash'),
+    tenderedCents: z.number().int().min(0).max(10_000_000),
+    /** Defaults to the cashier's own open drawer session at this restaurant. */
+    drawerSessionId: uuid.optional(),
+  }),
   PayOrderRequestSchema,
 ]);
 export type StaffPaymentRequest = z.infer<typeof StaffPaymentRequestSchema>;
@@ -640,6 +645,8 @@ export const RefundRequestSchema = z.object({
   amountCents: z.number().int().min(1).max(10_000_000).optional(),
   reason: z.enum(REFUND_REASONS),
   note: z.string().trim().max(500).optional(),
+  /** Cash refunds: defaults to the refunder's own open drawer session. */
+  drawerSessionId: uuid.optional(),
 });
 export type RefundRequest = z.input<typeof RefundRequestSchema>;
 
@@ -655,3 +662,76 @@ export const RefundViewSchema = z.object({
   createdAt: z.string(),
 });
 export type RefundView = z.infer<typeof RefundViewSchema>;
+
+// ---------------------------------------------------------------- cash drawers
+
+export const OpenDrawerSessionRequestSchema = z.object({
+  openingFloatCents: z.number().int().min(0).max(1_000_000),
+});
+
+export const DrawerMovementRequestSchema = z.object({
+  kind: z.enum(['paid_in', 'paid_out', 'safe_drop']),
+  amountCents: z.number().int().min(1).max(1_000_000),
+  reason: z.string().trim().min(3).max(200),
+});
+export type DrawerMovementRequest = z.infer<typeof DrawerMovementRequestSchema>;
+
+/** Blind count: the cashier states what they counted without seeing what was expected. */
+export const DrawerCountRequestSchema = z.object({
+  countedCents: z.number().int().min(0).max(10_000_000),
+  notes: z.string().trim().max(500).optional(),
+});
+
+export const DrawerApproveRequestSchema = z.object({ notes: z.string().trim().min(3).max(500) });
+
+export const DrawerSessionViewSchema = z.object({
+  id: uuid,
+  drawerId: uuid,
+  drawerName: z.string(),
+  status: z.enum(['open', 'pending_approval', 'closed']),
+  openedBy: z.string(),
+  openedById: uuid,
+  openedAt: z.string(),
+  businessDate: z.string(),
+  openingFloatCents: cents,
+  /**
+   * Expected cash and its breakdown are hidden while a session is open unless
+   * the viewer may manage cash (blind counting).
+   */
+  expected: z
+    .object({
+      cashSalesCents: cents,
+      cashRefundsCents: cents,
+      paidInsCents: cents,
+      paidOutsCents: cents,
+      safeDropsCents: cents,
+      expectedCents: cents,
+    })
+    .nullable(),
+  countedCents: cents.nullable(),
+  varianceCents: cents.nullable(),
+  countedBy: z.string().nullable(),
+  approvedBy: z.string().nullable(),
+  closedAt: z.string().nullable(),
+  movements: z.array(
+    z.object({
+      id: uuid,
+      kind: z.string(),
+      amountCents: cents,
+      reason: z.string(),
+      recordedBy: z.string(),
+      createdAt: z.string(),
+    }),
+  ),
+});
+export type DrawerSessionView = z.infer<typeof DrawerSessionViewSchema>;
+
+export const DrawerViewSchema = z.object({
+  id: uuid,
+  code: z.string(),
+  name: z.string(),
+  activeSession: z
+    .object({ id: uuid, status: z.string(), openedBy: z.string(), openedById: uuid })
+    .nullable(),
+});
+export type DrawerView = z.infer<typeof DrawerViewSchema>;

@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   balance,
   bearer,
+  ensureDrawer,
   getMenu,
   item,
   login,
@@ -25,6 +26,7 @@ describe('POS: staff order entry, cash and card tender, park / recall / void', (
     h = await startHarness();
     centralId = await restaurantId(h, CENTRAL);
     crew = await login(h, 'crew1@central.kitchos.test');
+    await ensureDrawer(h, crew, CENTRAL);
   });
   afterAll(() => h.close());
 

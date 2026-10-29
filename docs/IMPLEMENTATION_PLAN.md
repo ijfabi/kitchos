@@ -36,7 +36,8 @@ key: ✅ done · 🟡 in progress / partial · ⬜ not started.
 | POS: staff order entry, cash + rounding, card, park / recall / void  | ✅     |
 | POS: discounts, manager overrides, staff/comp meals                  | ✅     |
 | POS: coupons, line-level discounts                                   | ⬜     |
-| POS: refunds (needs Phase 3 journal), till sessions                  | ⬜     |
+| POS: refunds (Milestone 7)                                           | ✅     |
+| POS: cash drawers, till sessions, blind counts (Milestone 8)         | ✅     |
 | Playwright E2E for the customer → kitchen → pickup journey           | ✅     |
 
 ## Phase 2 — Inventory 🟡
@@ -54,6 +55,8 @@ average valuation, batch production, low-stock alerts, theoretical vs actual usa
 Done (Milestone 6): in-process event dispatcher; double-entry journal with DB-enforced balance,
 append-only and closed-period rules; payment and sale-recognition postings; trial balance,
 journal and reconciliation views (Books screen).
+Done (Milestone 7): refunds and payment reversal. Done (Milestone 8): cash drawers and till
+sessions with blind counts, variance approval and drawer postings (ADR-0015).
 
 Double-entry journal (immutable, balanced, reversals), posting rules from outbox events via an
 idempotent consumer, refunds and payment reversal, cash drawers and till sessions, shift and
@@ -89,7 +92,7 @@ reliability drills, deployment docs, measured benchmark report.
 
 ## Immediate next tasks
 
-1. Till sessions / cash drawers with blind counts (cash sales and cash refunds per drawer),
-   feeding shift close.
-2. Inventory valuation postings (COGS on consumption, waste expense, reclassification).
-3. Inventory and waste UI for crew and managers.
+1. Inventory valuation postings (COGS on consumption, waste expense, reclassification).
+2. Inventory and waste UI for crew and managers.
+3. Shift and business-day close built on drawer sessions (all drawers counted, day totals,
+   cash per business date), plus a drawer admin API.

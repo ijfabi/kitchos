@@ -1,6 +1,9 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { Tx } from '@kitchos/database';
 import {
+  drawerClosePostings,
+  drawerFloatPostings,
+  drawerMovementPostings,
   inclusiveTax,
   paymentReceiptPostings,
   refundPostings,
@@ -33,7 +36,14 @@ export interface EventConsumer {
 @Injectable()
 export class LedgerConsumer implements EventConsumer {
   readonly name = 'ledger';
-  readonly eventTypes = ['payment.captured', 'order.completed', 'payment.refunded'] as const;
+  readonly eventTypes = [
+    'payment.captured',
+    'order.completed',
+    'payment.refunded',
+    'drawer.opened',
+    'drawer.movement_recorded',
+    'drawer.closed',
+  ] as const;
 
   constructor(@Inject(LedgerService) private readonly ledger: LedgerService) {}
 
@@ -41,6 +51,88 @@ export class LedgerConsumer implements EventConsumer {
     if (event.eventType === 'payment.captured') return this.paymentCaptured(tx, event);
     if (event.eventType === 'order.completed') return this.orderCompleted(tx, event);
     if (event.eventType === 'payment.refunded') return this.paymentRefunded(tx, event);
+    if (event.eventType === 'drawer.opened') return this.drawerOpened(tx, event);
+    if (event.eventType === 'drawer.movement_recorded') return this.drawerMovement(tx, event);
+    if (event.eventType === 'drawer.closed') return this.drawerClosed(tx, event);
+  }
+
+  private async drawerOpened(tx: Tx, event: ConsumedEvent): Promise<void> {
+    const s = await this.drawerSession(tx, event.aggregateId);
+    const postings = drawerFloatPostings(s.opening_float_cents);
+    if (postings.length === 0) return; // no float, nothing moved
+    await this.ledger.post(tx, {
+      orgId: event.orgId,
+      restaurantId: s.restaurant_id,
+      businessDate: s.business_date,
+      entryType: 'drawer_float',
+      sourceType: 'drawer_session',
+      sourceId: s.id,
+      sourceEventId: event.id,
+      description: `Float issued: ${s.drawer_name}`,
+      postings,
+    });
+  }
+
+  private async drawerMovement(tx: Tx, event: ConsumedEvent): Promise<void> {
+    const m = await tx
+      .selectFrom('drawer_movements')
+      .select(['id', 'session_id', 'kind', 'amount_cents', 'reason'])
+      .where('id', '=', event.aggregateId)
+      .executeTakeFirst();
+    if (!m) throw new Error(`drawer movement ${event.aggregateId} not found`);
+    const s = await this.drawerSession(tx, m.session_id);
+    const kind = m.kind as 'paid_in' | 'paid_out' | 'safe_drop';
+    await this.ledger.post(tx, {
+      orgId: event.orgId,
+      restaurantId: s.restaurant_id,
+      businessDate: s.business_date,
+      entryType: 'drawer_movement',
+      sourceType: 'drawer_movement',
+      sourceId: m.id,
+      sourceEventId: event.id,
+      description: `${kind.replace('_', ' ')}: ${s.drawer_name} — ${m.reason}`,
+      postings: drawerMovementPostings(kind, m.amount_cents),
+    });
+  }
+
+  private async drawerClosed(tx: Tx, event: ConsumedEvent): Promise<void> {
+    const s = await this.drawerSession(tx, event.aggregateId);
+    if (s.status !== 'closed' || s.counted_cents === null || s.expected_cents === null) {
+      throw new Error(`drawer session ${s.id} is not closed`);
+    }
+    const postings = drawerClosePostings(s.counted_cents, s.expected_cents);
+    if (postings.length === 0) return;
+    await this.ledger.post(tx, {
+      orgId: event.orgId,
+      restaurantId: s.restaurant_id,
+      businessDate: s.business_date,
+      entryType: 'drawer_close',
+      sourceType: 'drawer_session',
+      sourceId: s.id,
+      sourceEventId: event.id,
+      description: `Drawer closed: ${s.drawer_name}`,
+      postings,
+    });
+  }
+
+  private async drawerSession(tx: Tx, id: string) {
+    const s = await tx
+      .selectFrom('drawer_sessions as s')
+      .innerJoin('cash_drawers as d', 'd.id', 's.drawer_id')
+      .select([
+        's.id',
+        's.restaurant_id',
+        's.status',
+        's.opening_float_cents',
+        's.counted_cents',
+        's.expected_cents',
+        's.business_date',
+        'd.name as drawer_name',
+      ])
+      .where('s.id', '=', id)
+      .executeTakeFirst();
+    if (!s) throw new Error(`drawer session ${id} not found`);
+    return s;
   }
 
   private async paymentRefunded(tx: Tx, event: ConsumedEvent): Promise<void> {

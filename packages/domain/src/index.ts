@@ -7,3 +7,4 @@ export * from './valuation.ts';
 export * from './cash.ts';
 export * from './discount.ts';
 export * from './postings.ts';
+export * from './cash-drawer.ts';

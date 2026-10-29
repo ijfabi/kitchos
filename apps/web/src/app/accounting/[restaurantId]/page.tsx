@@ -20,6 +20,10 @@ export default function BooksPage() {
 const ENTRY_LABEL: Record<string, string> = {
   payment_receipt: 'Payment received',
   sale_recognition: 'Sale recognised',
+  refund: 'Refund',
+  drawer_float: 'Drawer float issued',
+  drawer_movement: 'Drawer movement',
+  drawer_close: 'Drawer closed to safe',
   reversal: 'Reversal',
   adjustment: 'Adjustment',
 };

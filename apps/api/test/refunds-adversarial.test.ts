@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { EventDispatcher } from '../src/events/event-dispatcher.service.ts';
 import {
   bearer,
+  ensureDrawer,
   getMenu,
   item,
   login,
@@ -44,6 +45,7 @@ describe('refunds under adversarial conditions', () => {
     rivalManager = await login(h, 'manager@rival.test');
     auditor = await login(h, 'auditor@kitchos.test');
     menu = await getMenu(h, CENTRAL);
+    for (const t of [crew, supervisor, manager]) await ensureDrawer(h, t, CENTRAL);
     await dispatcher.runOnce();
   });
   afterAll(() => h.close());

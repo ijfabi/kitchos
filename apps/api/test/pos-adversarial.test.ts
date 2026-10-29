@@ -3,6 +3,7 @@ import type { OrderView } from '@kitchos/contracts';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   bearer,
+  ensureDrawer,
   consumptionForOrder,
   getMenu,
   item,
@@ -42,6 +43,9 @@ describe('POS adversarial: tenant isolation, idempotency abuse, races and tender
     expressManager = await login(h, 'manager@express.kitchos.test');
     rivalManager = await login(h, 'manager@rival.test');
     admin = await login(h, 'admin@kitchos.test');
+    await ensureDrawer(h, crew, CENTRAL);
+    await ensureDrawer(h, driveCrew, DRIVE);
+    await ensureDrawer(h, admin, EXPRESS);
   });
   afterAll(() => h.close());
 

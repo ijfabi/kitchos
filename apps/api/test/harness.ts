@@ -121,6 +121,38 @@ export async function placeAndPay(
 
 export const bearer = (token: string) => ({ Authorization: `Bearer ${token}` });
 
+/**
+ * Makes sure the signed-in user has an open cash drawer session at the
+ * restaurant (cash payments and refunds require one). Reuses theirs if open.
+ */
+export async function ensureDrawer(
+  h: Harness,
+  token: string,
+  slug: string,
+  floatCents = 20_000,
+): Promise<string> {
+  const rid = await restaurantId(h, slug);
+  const me = (await h.http.get('/v1/me').set(bearer(token))).body.user.id as string;
+  const drawers = (await h.http.get(`/v1/restaurants/${rid}/cash/drawers`).set(bearer(token)))
+    .body as {
+    id: string;
+    activeSession: { id: string; status: string; openedById: string } | null;
+  }[];
+  const mine = drawers.find(
+    (d) => d.activeSession?.openedById === me && d.activeSession.status === 'open',
+  );
+  if (mine) return mine.activeSession!.id;
+  const free = drawers.find((d) => !d.activeSession);
+  if (!free) throw new Error(`no free cash drawer at ${slug}`);
+  const res = await h.http
+    .post(`/v1/restaurants/${rid}/cash/drawers/${free.id}/sessions`)
+    .set(bearer(token))
+    .send({ openingFloatCents: floatCents });
+  if (res.status !== 201)
+    throw new Error(`open drawer failed: ${res.status} ${JSON.stringify(res.body)}`);
+  return res.body.id as string;
+}
+
 /** Consumption movements recorded against an order's lines, by SKU. */
 export async function consumptionForOrder(h: Harness, orderId: string) {
   return h.owner

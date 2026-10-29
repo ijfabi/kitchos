@@ -1,8 +1,10 @@
-﻿import { type DynamicModule, Module } from '@nestjs/common';
+import { type DynamicModule, Module } from '@nestjs/common';
 import type { Database } from '@kitchos/database';
 import type pg from 'pg';
 import type { Logger } from 'pino';
 import { AccountingController } from './accounting/accounting.controller.ts';
+import { CashDrawerService } from './cash/cash-drawer.service.ts';
+import { CashController } from './cash/cash.controller.ts';
 import { LedgerConsumer } from './accounting/ledger.consumer.ts';
 import { LedgerService } from './accounting/ledger.service.ts';
 import { AuthController } from './auth/auth.controller.ts';
@@ -59,6 +61,7 @@ export class AppModule {
         StockOperationsController,
         LiveEventsController,
         AccountingController,
+        CashController,
       ],
       providers: [
         { provide: APP_CONFIG, useValue: deps.config },
@@ -79,6 +82,7 @@ export class AppModule {
         LedgerService,
         LedgerConsumer,
         EventDispatcher,
+        CashDrawerService,
       ],
     };
   }

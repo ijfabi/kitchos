@@ -2,7 +2,15 @@
 
 import type { LoginResponse } from '@kitchos/contracts';
 import { useMutation } from '@tanstack/react-query';
-import { BookOpen, ChefHat, ClipboardCheck, LogOut, ShoppingCart, Undo2 } from 'lucide-react';
+import {
+  BookOpen,
+  ChefHat,
+  ClipboardCheck,
+  LogOut,
+  ShoppingCart,
+  Undo2,
+  Wallet,
+} from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
 import { Badge, Button, Card, Logo, Spinner } from '@/components/ui';
@@ -143,6 +151,14 @@ function Workspaces() {
                     className="inline-flex h-11 items-center gap-2 rounded-lg border border-line px-4 text-sm font-semibold hover:bg-canvas"
                   >
                     <Undo2 className="size-4" aria-hidden /> Orders &amp; refunds
+                  </Link>
+                )}
+                {r.permissions.includes('cash.manage') && (
+                  <Link
+                    href={`/cash/${r.id}`}
+                    className="inline-flex h-11 items-center gap-2 rounded-lg border border-line px-4 text-sm font-semibold hover:bg-canvas"
+                  >
+                    <Wallet className="size-4" aria-hidden /> Cash drawers
                   </Link>
                 )}
                 {r.permissions.includes('reports.view') && (
