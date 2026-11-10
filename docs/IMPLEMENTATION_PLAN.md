@@ -65,7 +65,8 @@ business-day close, drawer admin and retry of failed postings (ADR-0017). Done (
 food cost and gross profit report from the journal. Done (Milestone 13): reconciliation per
 tender and per entry (R-030). Done (Milestone 14): prepared food recorded as waste on cancel and
 refund (R-032). Done (Milestone 15): refunds by item with per-line GST, replace an item, and live
-figures for managers (R-019 for items, R-028, R-035). A separate shift close is
+figures for managers (R-019 for items, R-028, R-035). Done (Milestone 16): recipe cost of sales
+(theoretical food cost) on the food cost report (R-031). A separate shift close is
 not done.
 
 Double-entry journal (immutable, balanced, reversals), posting rules from outbox events via an
@@ -102,5 +103,6 @@ reliability drills, deployment docs, measured benchmark report.
 
 ## Immediate next tasks
 
-1. Recipe (theoretical) cost of what was sold, from completed order lines net of returns, beside
-   actual food cost (R-031).
+1. Per-item food cost: recipe cost and margin by menu item and category.
+2. Shift close across drawers and people; a drawer session is one cashier's shift today.
+3. Transfers between restaurants, lots and expiry, unit conversions (Phase 2).

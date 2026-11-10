@@ -122,16 +122,20 @@ function Report({ data }: { data: FoodCostReport }) {
   const t = data.totals;
   return (
     <>
-      <div className="grid gap-3 sm:grid-cols-4" data-testid="food-cost-totals">
+      <div className="grid gap-3 sm:grid-cols-5" data-testid="food-cost-totals">
         <Stat label="Net sales" value={money(t.netSalesCents)} />
+        <Stat label="Recipe food cost" value={percent(t.theoreticalFoodCostBps)} />
         <Stat label="Actual food cost" value={percent(t.actualFoodCostBps)} />
         <Stat label="Gross profit" value={money(t.grossProfitCents)} />
         <Stat label="Gross margin" value={percent(t.grossMarginBps)} />
       </div>
       <p className="text-xs text-ink-muted">
-        Food produced is what was made, at standard cost, on the day it was made: it includes food
-        later cancelled, comped or refunded. Actual food cost adds waste and stock count shortfalls
-        (a negative shortfall means a count found more). Open days can still change.
+        Recipe cost of sales is what the recipes of the items sold should cost, on the day the sale
+        posted, less items refunded by item (comps count at zero revenue). Food produced is
+        everything made, on the day it was made. The difference, unsold production, is food
+        cancelled or made one day and sold another, so it can be negative on a day: read it over a
+        range. Actual food cost adds waste and stock count shortfalls (negative means a count found
+        more). Open days can still change.
       </p>
       <Card className="overflow-x-auto p-0">
         <table className="w-full text-sm">
@@ -146,6 +150,12 @@ function Report({ data }: { data: FoodCostReport }) {
               </th>
               <th scope="col" className="px-3 py-2 text-right font-medium">
                 Food produced
+              </th>
+              <th scope="col" className="px-3 py-2 text-right font-medium">
+                Recipe cost of sales
+              </th>
+              <th scope="col" className="px-3 py-2 text-right font-medium">
+                Unsold production
               </th>
               <th scope="col" className="px-3 py-2 text-right font-medium">
                 Waste
@@ -177,6 +187,12 @@ function Report({ data }: { data: FoodCostReport }) {
                   {money(d.netSalesCents)}
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums">{money(d.cogsCents)}</td>
+                <td className="px-3 py-2 text-right tabular-nums" data-testid="sold-recipe">
+                  {money(d.soldRecipeCents)}
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums">
+                  {money(d.unsoldProductionCents)}
+                </td>
                 <td className="px-3 py-2 text-right tabular-nums">{money(d.wasteCents)}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{money(d.stockVarianceCents)}</td>
                 <td className="px-3 py-2 text-right tabular-nums">

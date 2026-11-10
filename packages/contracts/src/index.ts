@@ -931,6 +931,19 @@ const foodCostFigures = {
   cogsBps: z.number().int().nullable(),
   actualFoodCostBps: z.number().int().nullable(),
   grossMarginBps: z.number().int().nullable(),
+  /**
+   * Recipe cost of what was sold: the cost sold lines were consumed at, on the day the sale posted,
+   * less items refunded by item that day. Comps count here at zero revenue. Its share of net sales
+   * is the theoretical food cost.
+   */
+  soldRecipeCents: cents,
+  theoreticalFoodCostBps: z.number().int().nullable(),
+  /**
+   * COGS less recipe cost of sales: produced but not sold that day, e.g. cancelled food kept in COGS,
+   * or cooked on one day and sold on another (then negative on the selling day). A refund by amount
+   * that records waste also makes it negative. Read it over a range, not a single day.
+   */
+  unsoldProductionCents: cents,
 };
 
 export const FoodCostReportSchema = z.object({

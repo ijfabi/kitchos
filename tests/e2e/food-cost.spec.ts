@@ -48,11 +48,12 @@ test('the food cost screen shows what the books hold for each day', async ({
       `${API}/restaurants/${central.id}/reports/food-cost?from=${businessDate}&to=${businessDate}`,
       { headers: { Authorization: `Bearer ${accessToken}` } },
     )
-  ).json()) as { days: { netSalesCents: number }[] };
+  ).json()) as { days: { netSalesCents: number; soldRecipeCents: number }[] };
   // The dev API posts events in the background: reload so the page reads the same state.
   await page.reload();
   await expect(page.getByTestId('food-cost-day')).toHaveCount(7);
   await expect(todayRow.getByTestId('net-sales')).toHaveText(aud(api.days[0]!.netSalesCents));
+  await expect(todayRow.getByTestId('sold-recipe')).toHaveText(aud(api.days[0]!.soldRecipeCents));
 
   // An impossible range is caught before asking the server.
   await page

@@ -23,6 +23,9 @@ describe('food cost', () => {
       cogsBps: 2_800,
       actualFoodCostBps: 3_000,
       grossMarginBps: 7_000,
+      soldRecipeCents: 0,
+      theoreticalFoodCostBps: 0,
+      unsoldProductionCents: 2_800,
     });
   });
 
@@ -45,6 +48,23 @@ describe('food cost', () => {
       expect(r.actualFoodCostBps).toBeNull();
       expect(r.grossProfitCents).toBe(netSalesCents - 110);
     }
+  });
+
+  it('recipe cost of sales gives the theoretical share, and the rest of COGS is unsold production', () => {
+    const r = foodCost({
+      netSalesCents: 10_000,
+      cogsCents: 3_100,
+      wasteCents: 200,
+      stockVarianceCents: 0,
+      soldRecipeCents: 2_800,
+    });
+    expect(r.theoreticalFoodCostBps).toBe(2_800);
+    expect(r.unsoldProductionCents).toBe(300);
+    expect(r.actualFoodCostBps).toBe(3_300);
+    // Actual is theoretical plus everything that was not a sale.
+    expect(r.actualFoodCostCents).toBe(
+      r.soldRecipeCents + r.unsoldProductionCents + r.wasteCents + r.stockVarianceCents,
+    );
   });
 
   it('refuses non-integer money', () => {

@@ -1,5 +1,66 @@
 # Progress log
 
+## Milestone 16 — Recipe cost of sales (theoretical food cost) (2026-11-10)
+
+### Implemented
+
+- **Recipe cost of sales:** the food cost report now shows, per business day and in total, the
+  recipe cost of sales. That is the cost the sold lines were consumed at (remakes excluded), less items
+  refunded by item, each taking its exact cumulative share.
+- **Two new figures:** its share of net sales (theoretical food cost), and unsold production (COGS less
+  recipe cost of sales).
+- **Screen:** a Recipe food cost stat beside Actual, and columns for food produced, recipe cost of sales
+  and unsold production. No schema change. Resolves R-031 (D-023).
+
+### Independent review and testing (subagents)
+
+Both found the same design defect, and the tester proved it. Recipe cost of sales was dated from
+hand-over and refund times, while revenue and COGS come from the journal. So:
+
+1. a sale posted late from a closed day changed that closed day (50c to 87c in the test), while its
+   revenue moved to the next open day;
+2. an undispatched sale showed recipe cost with no revenue behind it.
+
+It is now read from the journal's own sale and refund entries, in the same transaction as the rest of
+the report. That also fixed two queries the reviewer measured scanning every consumption movement and
+every refund in the restaurant's history; they now use the journal's date index and look lines up per
+order.
+
+Also fixed: the labels claimed comps are unsold production (they count in recipe cost of sales at zero
+revenue), and they did not say unsold production goes negative on the day food cooked earlier is sold.
+The food produced column is back.
+
+The tester's other 30 scenarios held against figures computed from source rows. They covered:
+
+- a clean day where recipe cost of sales equals COGS;
+- consumption at acceptance, at task start and at completion;
+- cooked on one day and sold on the next;
+- meals, comps and discounts;
+- refunds by item one unit at a time, across days and before the range;
+- refunds by amount, cancellations and remakes;
+- a 92-day range, tenant isolation and RLS.
+
+### Findings
+
+- Mutation checks: 4 mutants, all killed. They covered remakes counted as sold, refunds by item
+  ignored, refund history ignored, and meal components left out of a refund's value.
+- One older test pinned that a refund by amount does not reduce recipe cost of sales; that is the
+  design (it names no items), now stated in the test and on the screen.
+
+### Tests executed
+
+| Suite                      | Result                                  |
+| -------------------------- | --------------------------------------- |
+| `@kitchos/domain`          | 61/61 passed                            |
+| `@kitchos/api` integration | 441/441 passed (×2, shuffled; 26 files) |
+| Playwright (13 journeys)   | 13/13 passed                            |
+| ESLint / Prettier / tsc    | clean                                   |
+| `next build`               | succeeded                               |
+
+### Not done
+
+- Food cost per menu item or category.
+
 ## Milestone 15 — Refunds by item, and live figures for managers (2026-11-10)
 
 ### Implemented (decisions by the product owner)

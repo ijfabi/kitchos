@@ -298,4 +298,111 @@ describe('food cost and gross margin report', () => {
     const rival = await login(h, 'manager@rival.test');
     expect((await get(`from=${today}&to=${today}`, rival)).status).toBe(404);
   });
+
+  describe('recipe cost of sales (theoretical food cost)', () => {
+    const tasksOf = async (orderId: string) =>
+      (
+        (await h.http.get(`/v1/restaurants/${driveId}/kitchen/tasks`).set(bearer(crew)).expect(200))
+          .body as KitchenTaskView[]
+      ).filter((t) => t.orderId === orderId);
+    const handOver = async (o: { id: string }) => {
+      for (const t of await tasksOf(o.id)) {
+        await h.http
+          .post(`/v1/restaurants/${driveId}/kitchen/tasks/${t.id}/complete`)
+          .set(bearer(crew))
+          .send({})
+          .expect(200);
+      }
+      await h.http
+        .post(`/v1/restaurants/${driveId}/orders/${o.id}/handoff`)
+        .set(bearer(crew))
+        .expect(200);
+    };
+    const consumedValue = async (orderId: string) => {
+      const lines = await h.owner
+        .selectFrom('order_lines')
+        .select('id')
+        .where('order_id', '=', orderId)
+        .execute();
+      return -(await movementValue(
+        'order_line',
+        lines.map((l) => l.id),
+      ));
+    };
+
+    it('a sale adds exactly what its lines were consumed at, on the day it is handed over', async () => {
+      await drain();
+      const before = await todayRow();
+      const menu = await getMenu(h, DRIVE);
+      const o = await placeAndPay(h, DRIVE, [
+        { menuItemId: item(menu, 'Cheeseburger').id, quantity: 2 },
+      ]);
+      await handOver(o);
+      await drain();
+      const after = await todayRow();
+      expect(after.soldRecipeCents - before.soldRecipeCents).toBe(await consumedValue(o.id));
+      expect(after.unsoldProductionCents).toBe(after.cogsCents - after.soldRecipeCents);
+    });
+
+    it('a refund by item takes back its exact share; a fully refunded line nets to zero', async () => {
+      const menu = await getMenu(h, DRIVE);
+      const o = await placeAndPay(h, DRIVE, [
+        { menuItemId: item(menu, 'Cheeseburger').id, quantity: 3 },
+      ]);
+      await handOver(o);
+      await drain();
+      const value = await consumedValue(o.id);
+      const line = await h.owner
+        .selectFrom('order_lines')
+        .select('id')
+        .where('order_id', '=', o.id)
+        .executeTakeFirstOrThrow();
+      const supervisor = await login(h, 'supervisor@drive.kitchos.test');
+      const before = await todayRow();
+      for (let i = 0; i < 3; i++) {
+        await h.http
+          .post(`/v1/restaurants/${driveId}/orders/${o.id}/refunds`)
+          .set(bearer(supervisor))
+          .set('Idempotency-Key', randomUUID())
+          .send({ reason: 'quality', items: [{ orderLineId: line.id, quantity: 1 }] })
+          .expect(201);
+      }
+      await drain();
+      const after = await todayRow();
+      // Sold and fully refunded the same day: recipe cost of sales is back where it started.
+      expect(after.soldRecipeCents - before.soldRecipeCents).toBe(-value);
+    });
+
+    it('food cooked for a cancelled order is unsold production, not recipe cost of sales', async () => {
+      await drain();
+      const before = await todayRow();
+      const menu = await getMenu(h, DRIVE);
+      const o = await placeAndPay(h, DRIVE, [
+        { menuItemId: item(menu, 'Cheeseburger').id, quantity: 1 },
+      ]);
+      for (const t of await tasksOf(o.id)) {
+        await h.http
+          .post(`/v1/restaurants/${driveId}/kitchen/tasks/${t.id}/start`)
+          .set(bearer(crew))
+          .send({})
+          .expect(200);
+      }
+      const line = await h.owner
+        .selectFrom('order_lines')
+        .select('id')
+        .where('order_id', '=', o.id)
+        .executeTakeFirstOrThrow();
+      // Kept in COGS (not recorded as waste), so it shows as production that was never sold.
+      await h.http
+        .post(`/v1/restaurants/${driveId}/orders/${o.id}/cancel`)
+        .set(bearer(manager))
+        .send({ reason: 'Customer left', waste: [{ orderLineId: line.id, quantity: 0 }] })
+        .expect(200);
+      await drain();
+      const after = await todayRow();
+      const value = await consumedValue(o.id);
+      expect(after.soldRecipeCents).toBe(before.soldRecipeCents);
+      expect(after.unsoldProductionCents - before.unsoldProductionCents).toBe(value);
+    });
+  });
 });

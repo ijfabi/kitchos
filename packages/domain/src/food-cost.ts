@@ -12,9 +12,14 @@ export interface FoodCostInput {
   wasteCents: number;
   /** Stock count shortfall; negative when a count found more than the books. */
   stockVarianceCents: number;
+  /**
+   * Recipe cost of what was sold: the cost at which sold lines were consumed, dated by the sale,
+   * less refunded items on the day of the refund. Defaults to 0.
+   */
+  soldRecipeCents?: number;
 }
 
-export interface FoodCost extends FoodCostInput {
+export interface FoodCost extends Required<FoodCostInput> {
   /** What food actually cost: produced plus waste plus count shortfall. */
   actualFoodCostCents: number;
   /** Net sales less actual food cost. */
@@ -24,6 +29,10 @@ export interface FoodCost extends FoodCostInput {
   actualFoodCostBps: number | null;
   /** Gross profit as a share of net sales, in basis points. */
   grossMarginBps: number | null;
+  /** Recipe cost of sales as a share of net sales: what the menu's recipes say food should cost. */
+  theoreticalFoodCostBps: number | null;
+  /** COGS less recipe cost of sales: produced but not sold that day; negative when sold later. */
+  unsoldProductionCents: number;
 }
 
 /**
@@ -34,7 +43,10 @@ export interface FoodCost extends FoodCostInput {
  */
 export function foodCost(input: FoodCostInput): FoodCost {
   const { netSalesCents, cogsCents, wasteCents, stockVarianceCents } = input;
-  for (const v of [netSalesCents, cogsCents, wasteCents, stockVarianceCents]) assertCents(v);
+  const soldRecipeCents = input.soldRecipeCents ?? 0;
+  for (const v of [netSalesCents, cogsCents, wasteCents, stockVarianceCents, soldRecipeCents]) {
+    assertCents(v);
+  }
   const actualFoodCostCents = cogsCents + wasteCents + stockVarianceCents;
   const grossProfitCents = netSalesCents - actualFoodCostCents;
   const bps = (amount: number) =>
@@ -43,10 +55,13 @@ export function foodCost(input: FoodCostInput): FoodCost {
       : null;
   return {
     ...input,
+    soldRecipeCents,
     actualFoodCostCents,
     grossProfitCents,
     cogsBps: bps(cogsCents),
     actualFoodCostBps: bps(actualFoodCostCents),
     grossMarginBps: bps(grossProfitCents),
+    theoreticalFoodCostBps: bps(soldRecipeCents),
+    unsoldProductionCents: cogsCents - soldRecipeCents,
   };
 }

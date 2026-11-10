@@ -1048,6 +1048,11 @@ describe('food cost report (adversarial)', () => {
         cogsBps: null,
         actualFoodCostBps: null,
         grossMarginBps: null,
+        // The burger was sold on A; its refund on B was by amount, which names no items, so it
+        // does not reduce recipe cost of sales (only refunds by item do).
+        soldRecipeCents: 40,
+        theoreticalFoodCostBps: null,
+        unsoldProductionCents: 0,
       });
       // The first day on its own still has a percentage: 40/1000.
       expect(rep.days[0]).toMatchObject({ cogsBps: 400, actualFoodCostBps: 400 });
