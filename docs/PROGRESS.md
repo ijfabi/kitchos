@@ -1,5 +1,460 @@
 # Progress log
 
+## Milestone 15 — Refunds by item, and live figures for managers (2026-11-10)
+
+### Implemented (decisions by the product owner)
+
+- **Refunds by item:** a refund refunds the whole price of specific items, and they count as waste.
+  - The server prices each line as a cumulative share of its net (after discount), the last unit
+    taking the rest (`itemRefundCents`, property-tested), and refuses more than is left on a line.
+  - Migration `0011_item_refunds` adds append-only `refund_lines`.
+  - A meal's components are the waste; food already recorded (for example on cancel) is not recorded
+    again.
+- **GST per line:** each line carries its share of the order's GST, and GST-free lines carry none
+  (`lineGstCents`). An item refund returns its own share, stored on the refund and posted from there.
+  A refund by amount keeps the proportional share, capped at what is left and exact at the end.
+  Resolves R-019 for refunds by item.
+- **Replace:** records the item as waste with a remake (a fresh portion). It keeps one idempotency key
+  per item until a definite answer, and says when the waste needs approval.
+- **Refunds by amount** stay for money-only cases, such as duplicate charges, which cannot be refunded
+  by item. They record waste only if staff enter it.
+- **Refund screen:** by item is the default, showing the server's exact amount. The amount it showed
+  is sent along, and refused with 409 if the price has changed.
+- **R-028 (accepted):** department managers see live figures at any time. Consequence: a manager's own
+  till is not blind, but a different person still approves their variance.
+- R-035 is resolved by the decision above.
+
+### Independent review and testing (subagents)
+
+Both found the same defect, which the tester reproduced: a refund by item took GST in proportion to
+the whole order. For a GST-free water on an order with a taxable burger, it returned 21c of GST
+(expected 0), and the burger then returned 79 (expected 100). It was latent, since no seeded item is
+GST-free. Fixed with per-line GST, as above.
+
+Also from the review:
+
+- Replace used a new key per click, so a retry after a lost response could remake twice.
+- Replace showed for fully refunded items.
+- The screen could show one amount and send another after a retry.
+- Duplicate charges could be refunded by item.
+- The docs were stale.
+
+Accepted as risks: R-036 (mixing refunds by amount and by item) and R-037 (the refund line to order tie
+is enforced in the service only).
+
+The tester's other 15 scenarios held. They covered:
+
+- units refunded one at a time summing exactly to the net;
+- percent and amount discounts, comps, and cash rounding with an earlier refund by amount;
+- races (item against item, item against amount, item against cancel);
+- meals ×2 and component lines refused;
+- idempotency and access;
+- books reconciling per tender and per entry.
+
+### Findings
+
+- Every test that relied on Milestone 14's reason-based waste default moved to refunds by item. My
+  first Milestone 15 version left the screen still able to hide totals; that branch is removed.
+- Mutation checks: 5 mutants, all killed. They covered item GST from the proportional rule, the
+  discount ignored in the item price, a stale amount accepted, no per-line limit, and refund lines
+  not recorded.
+- Milestone 14's final verification (blocked by Docker earlier) was completed first: 387/387 (×2),
+  E2E 12/12, build, and all 6 mutants killed.
+
+### Tests executed
+
+| Suite                           | Result                                  |
+| ------------------------------- | --------------------------------------- |
+| `@kitchos/domain`               | 60/60 passed                            |
+| `@kitchos/api` integration      | 407/407 passed (×2, shuffled; 25 files) |
+| Playwright (13 journeys, 1 new) | 13/13 passed                            |
+| ESLint / Prettier / tsc         | clean                                   |
+| `next build`                    | succeeded                               |
+
+### Not done
+
+- Replace does not send a kitchen ticket, and meals cannot be replaced as a whole.
+- R-036 and R-037.
+
+## Milestone 14 — Prepared food recorded as waste on cancel and refund (2026-11-10, verified 2026-11-10)
+
+### Implemented (decisions by the product owner)
+
+- **Cancel:** records every prepared (consumed) portion not yet wasted as waste, reason
+  `cancelled_prepared_order`, in the cancel's transaction. The manager can lower the counts.
+- **Refund:** by reason. `quality` and `order_error` default to all remaining portions; other reasons
+  to none; staff can adjust.
+- **Adjusting:** a `waste` list in the request is the whole answer. `preparedVersion` from the new
+  `GET …/orders/:id/prepared-items` gets 409 `PREPARED_ITEMS_CHANGED` if the kitchen prepared or
+  wasted more since. Food not yet consumed is released, not wasted.
+- **Costing:** waste of consumed food takes its share of the line's consumption value (remakes
+  included), and the last portion takes the remainder, so a fully wasted line's COGS nets to exactly
+  zero. This resolves R-032 and R-024; ADR-0011, ADR-0014 and ADR-0016 are updated.
+- **Screens:** the expo cancel button opens a panel with the reason and prefilled counts (it used to be
+  a browser prompt). The refund form shows the same counts.
+
+### Independent review and testing (subagents)
+
+Review findings fixed:
+
+1. A cancel chosen from a stale prepared list silently left out food cooked meanwhile. Fixed with
+   `preparedVersion`, and the list now refreshes on live events.
+2. The refund form could refund twice after a lost response, because the body changed and the key
+   rotated. The body is now frozen with its key, and the key is not rotated on key-reuse errors.
+3. After a rejected remake, the default cancel or refund failed with 422 (capped by the line quantity).
+4. Waste was costed at today's standard cost, leaving COGS non-zero after a cost change.
+5. The hint suggested lowering counts for food passed to another order, which deducts stock twice. It
+   now advises recording it (R-034).
+6. Stale counts after a refund; the cancel audit now names the waste it created.
+
+The adversarial tester ran 22 scenarios across meals consumed at three points, races (cancel against
+waste, refunds and task changes), remakes, approval thresholds, idempotency, cost changes and access.
+20 held. It found **2 defects**, both fixed: a remade portion was reclassified at the first portion's
+cost, and partial wastes left rounding cents in COGS. Both now net to exactly zero.
+
+### Findings
+
+- My first auto-waste version broke four older tests, which recorded cancelled food by hand. They now
+  cancel with a zero count for that line, which also exercises manual entry. Three more pinned the old
+  costing (ADR-0016 used to accept a COGS residue); they now assert it nets exactly.
+- The API first treated a waste list as overriding only the lines it named, so an empty list could not
+  mean "none". A given list is now the whole answer.
+- Mutation checks:
+  - Killed: costing at today's standard cost, capping consumed lines by line quantity, accepting a
+    stale list, no remainder for the last portion, and remakes left out of consumed value.
+  - Also killed, on a clean rerun: "rejected waste counted as wasted". Its first run had broken the
+    file and proved nothing. All 6 are now killed.
+- Docker Desktop stopped during the first final run. The full suite, E2E and the build were rerun
+  once it was back.
+
+### Tests executed
+
+| Suite                                 | Result                                  |
+| ------------------------------------- | --------------------------------------- |
+| `@kitchos/domain`                     | 54/54 passed (no domain change since)   |
+| `@kitchos/api` full suite, final code | 387/387 passed (×2, shuffled; 24 files) |
+| Playwright (12 journeys, 1 new)       | 12/12 passed                            |
+| ESLint / Prettier / tsc               | clean on the final code                 |
+| `next build`                          | succeeded                               |
+
+### Not done
+
+- R-035: a small partial refund for quality wastes every portion by default; awaiting a product
+  decision (full refunds only?).
+- R-034: no transfer of prepared food between orders.
+
+## Milestone 13 — Reconciliation per tender and per entry (2026-11-10)
+
+### Implemented
+
+- Reconciliation, and therefore business-day close, now also requires, for the day:
+  - card payments less card refunds = net change in Card clearing from receipts and refunds;
+  - cash taken less cash refunded, with rounding = net change in Cash on hand from them;
+  - cash rounding on payments less refunds = the journal's Cash rounding from them;
+  - every receipt and refund entry belongs to exactly one payment or refund of that amount and day.
+    Entries moved late from a closed day are matched against the day they came from.
+- Books shows the new rows. No schema change. Resolves R-030 (ADR-0017 updated).
+
+### Independent review and testing (subagents)
+
+- The reviewer found no case where a correct day fails to reconcile, so nothing newly blocks day close.
+  Each item is dated the same way on both sides: payments by capture, refunds by creation, including
+  across the cutoff. A refund always uses its payment's tender.
+- The adversarial tester could not make an honest day fail either. It tried two trading days with three
+  drawers, rounding both ways, discounts, a comp, declined cards, cancellations, refunds a cent at a
+  time, cutoff edges and late entries. It found **three corrupted journals that still reconciled**, all
+  now caught:
+  1. cash rounding posted to the wrong account;
+  2. a missing receipt offset by a duplicate one of the same tender;
+  3. a stray receipt moved late from a closed day, which no day checked.
+- From the review: tests now pin that late receipts and refunds stay out of today's totals, assert every
+  field in the per-tender cases, and no longer claim more than they check.
+
+### Findings
+
+- My first per-tender test swapped money between card and cash, which trips both checks, so removing
+  either check survived. One test per check now changes only that check's figure.
+- My first refund test asserted a non-zero cash net, which a full cash refund correctly makes zero. It
+  failed on unchanged code, which made a round of mutation results meaningless, so they were rerun.
+- A "payment without a receipt" count was removed as redundant. Hiding a missing receipt needs an orphan
+  entry or a wrong amount, both counted, and the totals catch it otherwise; no test could fail without it.
+- Mutation checks: 12 mutants, all killed (after adding isolating tests for 6 that first survived).
+
+### Tests executed
+
+| Suite                                | Result                                  |
+| ------------------------------------ | --------------------------------------- |
+| `@kitchos/domain`                    | 54/54 passed                            |
+| `@kitchos/api` integration           | 354/354 passed (×2, shuffled; 22 files) |
+| Playwright (11 journeys)             | 11/11 passed                            |
+| ESLint / Prettier / tsc (5 packages) | clean                                   |
+| `next build`                         | succeeded                               |
+
+### Not done
+
+- R-028: who may see live cash figures while their own till is open (journal, trial balance). This is a
+  permission policy decision, left open.
+- Source matching for drawer entries (R-033).
+
+## Milestone 12 — Food cost and gross profit report (2026-11-10)
+
+### Implemented
+
+- `GET /v1/restaurants/:id/reports/food-cost?from&to` (`reports.view`, up to 92 days). Per business
+  day, and in total: net sales, cost of food produced (COGS), waste, stock count shortfall, actual food
+  cost, gross profit, and their shares of net sales. Each day says whether it is closed.
+- Figures come from the journal by business day, so they agree with day close, including entries
+  moved late from a closed day. Totals are summed, not averaged.
+- Domain `foodCost`: exact integers, shares in basis points rounded half away from zero, no share
+  without positive sales. Property-tested.
+- Food cost screen (`/reports/:id`) with date range, closed/open day badges, and a note on what each
+  figure includes. No schema change. Decision D-022.
+
+### Independent review and testing (subagents)
+
+The adversarial tester found **no calculation defects**. 41 scenarios, each checked against source rows
+rather than the journal, all held. They covered:
+
+- a realistic day: card and cash sales with rounding, a discount, a comp, a meal, a refund, cancel after
+  preparation, waste reclassification, a remake, raw waste and its rejection, and counts both ways;
+- refund-only and waste-only days;
+- half-basis-point boundaries, a late entry from a closed day, Sydney DST days and the 92-day limit;
+- every role, other restaurants and tenants, and RLS.
+
+Both found that some labels promised more than the figures mean. Fixed:
+
+1. "Recipe cost" was COGS, which also holds food later cancelled, comped or refunded, dated by when it
+   was made. Now "Cost of food produced" (`cogsBps`, not `theoreticalFoodCostBps`), with the screen
+   saying so.
+2. "Gross margin" was a cents amount; now `grossProfitCents`, plus a real `grossMarginBps`.
+3. "Count variance" is now "Count shortfall", noting that negative means a count found more.
+4. Rounding is documented as half away from zero, which is what it does.
+5. Days are built from integer offsets, so no session time zone can shift a date.
+6. Tests: the "summed, not averaged" test now uses two days with different ratios (it could not fail
+   before). The E2E now compares with sign and the same formatting, after a reload, because the dev
+   API posts in the background. The table gained a caption, column and row headers, and a client-side
+   range check.
+
+Accepted, not fixed: R-031 and R-032.
+
+### Findings
+
+- My first fixture for the totals test credited Inventory with no stock movement. The global "Inventory
+  = stock ledger" test caught it in the full suite. It now balances against Card clearing.
+- Mutation checks: 6 mutants, all killed. They covered returns left out of sales, count shortfall left
+  out of actual cost, a share of zero sales, late entries left out, and totals averaged.
+
+### Tests executed
+
+| Suite                                | Result                                  |
+| ------------------------------------ | --------------------------------------- |
+| `@kitchos/domain`                    | 54/54 passed                            |
+| `@kitchos/api` integration           | 325/325 passed (×2, shuffled; 21 files) |
+| Playwright (11 journeys)             | 11/11 passed (1 new)                    |
+| ESLint / Prettier / tsc (5 packages) | clean                                   |
+| `next build`                         | succeeded                               |
+
+### Not done
+
+- Theoretical (recipe) cost of what was sold, from the order lines of completed orders net of returns,
+  with unsold production shown separately.
+- Discounts and comps as their own column; per-item or per-category breakdown; export.
+
+## Milestone 11 — Business-day close and drawer admin (2026-11-03, verified 2026-11-10)
+
+### Implemented
+
+- Migration `0010_business_day_close`: append-only `business_day_closes`, a trigger moving entries
+  dated to a closed day to the first open day (`journal_entries.posted_late_from`), a per-day advisory
+  lock serialising posting and closing, and drawer admin grants.
+- API: `GET/POST /v1/restaurants/:id/days/:date[/close]`, `accounting/failed-events` with retry,
+  `cash/drawers` add, list all, retire and reactivate. New permissions `day.close` and `cash.admin`.
+- Reconciliation is now its own service, also compares drawer variance to Cash over/short, and
+  counts drawer events against the day they post to. Resolves R-017.
+- UI: Day close screen (blockers, warnings, totals, drawers, failed postings), Manage drawers panel.
+- ADR-0017.
+
+### Independent review and testing (subagents)
+
+Both found the same high-severity design defect in the first version, and the tester reproduced it:
+
+1. **A close could strand a drawer's entries.** A till counted after the cutoff posts to the day it
+   opened, but the backlog check went by when the event occurred, so that day could close first. Both
+   entries dead-lettered, cash on hand stayed at 11,100 instead of 0, and the next day could never
+   close. Events are now counted against the day they post to.
+
+Also fixed:
+
+2. Events reaching a closed day were lost as permanent dead letters; they now move to the first open
+   day, flagged. A 5-minute settling window after the cutoff makes this rare.
+3. Dead letters had no recovery (R-017): now an audited retry, listed on the close page.
+4. A manager running a till could derive its blind expected cash from the day's totals. They are now
+   withheld from that person. The journal and trial balance still allow an estimate (R-028).
+5. Snapshot cash figures left out rounding; added cash rounding and cash refunds.
+6. Year 0000 returned 500; now 400.
+
+Accepted as risks: R-027, R-028, R-029 and R-030 (R-030 resolved in Milestone 13).
+
+### Findings
+
+- The intermittent `reconciled: false` from Milestone 10 is explained. The test made one dispatcher
+  pass, which handles one batch, so it failed whenever other files had left more events than that
+  (`pendingEvents: 7`, no money difference). It now drains the queue. Not a ledger defect.
+- Mutation checks, 11 mutants, all killed. On the first pass 4 survived, because the late-entry
+  fallback hid a wrong backlog, so direct tests were added. One rerun printed no result during a
+  low-memory stop; it was rerun on 2026-11-10 and killed.
+- The E2E journeys and `next build` were first held back by low memory and run on 2026-11-10.
+
+### Tests executed
+
+| Suite                                | Result                                                               |
+| ------------------------------------ | -------------------------------------------------------------------- |
+| `@kitchos/domain`                    | not rerun (no domain change since Milestone 10: 49/49)               |
+| `@kitchos/api` integration           | 278/278 passed (×5: the 2 seeds that failed earlier, 3 new shuffles) |
+| Playwright (10 journeys)             | 10/10 passed (2 new)                                                 |
+| ESLint / Prettier / tsc (5 packages) | clean                                                                |
+| `next build`                         | succeeded                                                            |
+
+### Not done
+
+- A separate shift close across drawers or people (a drawer session is one cashier's shift).
+- Closing before the cutoff; reopening a closed day (corrections post on the day they are made).
+- A list of days still unclosed.
+
+## Milestone 10 — Inventory and waste UI (2026-11-02)
+
+### Implemented
+
+- New Inventory & waste screen (`/inventory/:id`), with sections shown by permission and enforced by
+  the API:
+  - Record waste (crew and up): an ingredient, prepared food, or an item on an order including
+    cancelled orders and meal components, with reason, station, notes and remake.
+  - Waste log (`inventory.view`): pending queue and recent records, approve and reject
+    (`waste.approve`), today's summary by reason, station and person (`reports.view`).
+  - Stock levels and recent movements (`inventory.view`).
+  - Receive goods and stock count (`inventory.adjust`). A blank count line means "not counted".
+- API: `GET inventory/waste-items` (names only, for crew), `GET inventory/waste/mine`, and
+  `recordedById` on the waste view. No schema change.
+- Quantities stay decimal strings or exact milli-units in the UI. Idempotency keys survive network
+  and 5xx failures and rotate on a definitive answer or a changed body.
+
+### Independent review and testing (subagents)
+
+The reviewer and the adversarial tester independently found the same high-severity defect. It
+predates the UI, which made it easy to reach:
+
+1. **Waste of an order line was capped per request, not cumulatively, with no lock.** Crew could
+   waste a consumed burger repeatedly: three times left that line's COGS at -408c and waste at 612c
+   on 204c consumed, and the day still showed Reconciled. On an unconsumed line it removed real
+   stock. Now capped cumulatively under the order lock (ADR-0011).
+
+Also fixed:
+
+2. Food cooked for a cancelled order could only be recorded as "Prepared food", deducting its
+   ingredients twice, because the picker hid cancelled and older orders. The picker now includes
+   them, and the prepared-food form warns about this.
+3. Crew could wedge stock screens for a whole restaurant: ten huge wastes pushed a balance past the
+   safe-integer range, so balances and counts returned 500. Movements taking a balance beyond
+   8 × 10^12 units now get 422; ones bringing it back are allowed. The same check turns the numeric
+   overflow 500 on receipts into a 422.
+4. Pending approvals could drop off the queue behind 100 newer records (now their own query).
+5. `remake` was stored true when no fresh portion was consumed.
+6. Goods receipts had no audit entry.
+7. An edit after a lost response could duplicate a record; the forms now warn when the outcome is
+   unknown.
+8. Smaller: the order mode showed an empty list without `orders.view`, failed picker queries looked
+   empty, and a line with no ingredients is now refused with a 422.
+
+Accepted and recorded as risks rather than fixed: R-024 (rounding when a line is wasted in parts,
+pinned by a test), R-025 (crew see waste costs), R-026 (waste then normal consumption).
+
+### Findings
+
+- My first balance limit (10^12 units) broke an existing huge-receipt test, which caught it. It is
+  now 8 × 10^12.
+- In that same run, `redelivery posts nothing twice` reported `reconciled: false`. Explained in
+  Milestone 11: a test that made one dispatcher pass, not a ledger defect.
+- Mutation checks on the cap (3 mutants): removing the cap and counting rejected records were both
+  killed. Removing the order lock **survived** the parallel race test, so a deterministic test now
+  holds the order's row lock and asserts waste waits; that mutant is now killed.
+- ESLint scanned the generated `playwright-report/`; it is now ignored.
+
+### Tests executed
+
+| Suite                                | Result                                  |
+| ------------------------------------ | --------------------------------------- |
+| `@kitchos/domain`                    | 49/49 passed                            |
+| `@kitchos/api` integration           | 207/207 passed (×2, shuffled; 17 files) |
+| Playwright (8 journeys)              | 8/8 passed                              |
+| ESLint / Prettier / tsc (5 packages) | clean                                   |
+| `next build`                         | succeeded                               |
+
+### Not done
+
+- Remake does not send a new ticket to the kitchen; it only records stock (the UI says so).
+- Cancel-after-preparation does not record its waste automatically (done in Milestone 14).
+- The waste summary shows today only. No search beyond the newest 100 orders in the order picker.
+- No supplier unit cost on the receipt form (stored by the API but not posted, R-022).
+- No Playwright coverage of remake, or of approving (as opposed to rejecting) waste.
+
+## Milestone 9 — Inventory valuation in the journal (2026-11-02)
+
+### Implemented
+
+- Migration `0009_inventory_valuation`:
+  - `stock_movements.unit_cost` and `value_cents`, set only by a `BEFORE INSERT` trigger. Corrections
+    that reverse a movement copy its cost.
+  - Inventory journal entry types.
+  - Accounts: Goods received not invoiced (2300), Opening balance equity (3000), Stock count
+    variance (5200).
+  - Cutover: earlier events of the newly consumed types are marked handled by the ledger.
+- Domain: consumption, waste, waste reversal, receipt and count postings, with property tests.
+- API: `InventoryValuationPoster` posts each stock operation from the event its own transaction
+  emitted, using the recorded movement values. Covers COGS, waste (reclassification and remakes),
+  waste reversal, goods receipts, count variance and opening stock.
+- Reconciliation: each business day, Σ valued stock movements must equal the journal's net change
+  in Inventory. This is part of `reconciled`.
+- Seed: opening stock is posted to the journal.
+- UI: Books labels the new entry types and shows the inventory reconciliation row.
+- ADR-0016; adds R-022 and R-023.
+
+### Independent review and testing
+
+Defects found and fixed, each with a regression test:
+
+1. A rejected waste record's correction used today's standard cost, leaving residue in Waste
+   expense after a cost change. Corrections now use the original movement's cost.
+2. Waste of a line consumed before valuation existed would credit COGS that was never debited. Such
+   records now stay out of the journal.
+3. The valuation trigger could be pointed at a forged cost table through a `TEMP` table (`pg_temp` is
+   searched first). `search_path` is now pinned.
+4. A reclassification-only waste reversal was dated by the dispatcher's clock, so a backlog across
+   midnight put it on the wrong business day. It now uses the day the rejection was decided.
+
+### Findings
+
+- A valuation test asserted no failed events across the whole database, so it failed whenever
+  `accounting.test.ts` (which dead-letters a poison event in another tenant) ran first. It now checks
+  that the waste record's own event was claimed and did not fail.
+- Mutation check of fix 4: dating the reversal with `now()` fails its regression test.
+
+### Tests executed
+
+| Suite                                | Result                                  |
+| ------------------------------------ | --------------------------------------- |
+| `@kitchos/domain`                    | 49/49 passed                            |
+| `@kitchos/api` integration           | 169/169 passed (×2, shuffled; 16 files) |
+| Playwright (6 journeys)              | 6/6 passed                              |
+| ESLint / Prettier / tsc (5 packages) | clean                                   |
+| `next build`                         | succeeded                               |
+
+### Not done
+
+- No Playwright journey exercises the new inventory postings or the reconciliation row with stock
+  activity beyond the existing sales journeys.
+- Purchase price variance and supplier invoices (R-022), moving-average or FIFO costing, food cost
+  and gross margin report, inventory and waste UI.
+
 ## Milestone 8 — Cash drawers, till sessions and blind counts (2026-10-30)
 
 ### Implemented

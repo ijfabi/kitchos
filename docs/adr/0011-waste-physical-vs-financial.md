@@ -35,6 +35,20 @@ Every waste record stores per-ingredient lines with a **treatment**:
   not reversed — the replacement was physically made.
 - Waste requests are idempotent (`Idempotency-Key`), and each movement's source key makes a
   replay a no-op.
+- **Waste of an order line is capped cumulatively, under the order lock** (added in Milestone 10).
+  Once consumed, a line can lose its quantity plus portions actually remade; before then, only its
+  quantity. Rejected records give their quantity back; remakes stand even if rejected. `remake` is
+  stored true only when a fresh portion was consumed.
+- **Cancellations and refunds record prepared food as waste** (added in Milestone 14, decisions
+  by the product owner). Cancelling an order records every prepared (consumed) portion not yet
+  wasted, reason `cancelled_prepared_order`, in the cancel's transaction. A refund by item
+  (Milestone 15) records the refunded items' food, a meal's components included; a replaced item
+  is recorded as waste with a remake. A refund by amount records only what staff enter.
+  Staff can adjust: a `waste` list in the request is then the whole answer, and `preparedVersion`
+  (from `GET …/orders/:id/prepared-items`) refuses the request with 409 if the kitchen prepared or
+  wasted more since it was chosen. Food not yet consumed is released, not wasted.
+- **Waste of consumed food is costed at its consumption cost**, the unit cost fixed on the line's
+  consumption movements, so the reclassification reverses exactly what went into COGS.
 
 ## Consequences
 

@@ -451,4 +451,54 @@ describe('waste, goods receipts and physical counts', () => {
       ).status,
     ).toBe(403);
   });
+
+  it('crew can pick ingredients without seeing stock levels', async () => {
+    const inv = `/v1/restaurants/${centralId}/inventory`;
+    expect((await h.http.get(`${inv}/balances`).set(bearer(crew))).status).toBe(403);
+    const res = await h.http.get(`${inv}/waste-items`).set(bearer(crew)).expect(200);
+    const items = res.body as Record<string, unknown>[];
+    expect(items.map((i) => i.inventoryItemId)).toContain(sku('LETTUCE'));
+    for (const i of items) {
+      expect(Object.keys(i).sort()).toEqual([
+        'baseUnit',
+        'category',
+        'inventoryItemId',
+        'name',
+        'sku',
+      ]);
+    }
+    // Same items as the restaurant's stock, and only this tenant's.
+    const balances = await h.http.get(`${inv}/balances`).set(bearer(manager)).expect(200);
+    expect(items.map((i) => i.inventoryItemId)).toEqual(
+      (balances.body as { inventoryItemId: string }[]).map((b) => b.inventoryItemId),
+    );
+    const auditor = await login(h, 'auditor@kitchos.test');
+    expect((await h.http.get(`${inv}/waste-items`).set(bearer(auditor))).status).toBe(403);
+    const rival = await login(h, 'manager@rival.test');
+    // Another tenant's restaurant does not exist as far as this caller can tell.
+    expect((await h.http.get(`${inv}/waste-items`).set(bearer(rival))).status).toBe(404);
+  });
+
+  it('"my waste" lists only the caller\'s own records and names the recorder', async () => {
+    const inv = `/v1/restaurants/${centralId}/inventory`;
+    const raw = { kind: 'raw_ingredient', inventoryItemId: sku('LETTUCE'), reason: 'spoiled' };
+    const mine = (await waste(crew, { ...raw, quantity: '1' }).expect(201)).body as WasteRecordView;
+    const theirs = (await waste(manager, { ...raw, quantity: '2' }).expect(201))
+      .body as WasteRecordView;
+    expect(mine.recordedById).not.toBe(theirs.recordedById);
+
+    const list = (await h.http.get(`${inv}/waste/mine`).set(bearer(crew)).expect(200))
+      .body as WasteRecordView[];
+    const ids = list.map((w) => w.id);
+    expect(ids).toContain(mine.id);
+    expect(ids).not.toContain(theirs.id);
+    expect(new Set(list.map((w) => w.recordedById))).toEqual(new Set([mine.recordedById]));
+
+    // The stated rule: a person cannot review their own record, whatever the UI hides.
+    await h.http
+      .post(`${inv}/waste/${theirs.id}/reject`)
+      .set(bearer(manager))
+      .send({ reason: 'Trying my own record' })
+      .expect(403);
+  });
 });

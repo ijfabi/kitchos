@@ -78,6 +78,19 @@ export class StockOperationsController {
     return this.ops.listWaste({ orgId: p.orgId, restaurantId }, q);
   }
 
+  /** A person's own recent records; recording waste does not require `inventory.view`. */
+  @Get('waste/mine')
+  @RequirePermission('waste.record')
+  listMyWaste(
+    @Param('restaurantId', UuidParam) restaurantId: string,
+    @Principal() p: StaffPrincipal,
+  ): Promise<WasteRecordView[]> {
+    return this.ops.listWaste(
+      { orgId: p.orgId, restaurantId },
+      { recordedBy: p.userId, limit: 20 },
+    );
+  }
+
   @Get('waste/summary')
   @RequirePermission('reports.view')
   summary(

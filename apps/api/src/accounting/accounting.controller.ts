@@ -1,22 +1,22 @@
 import { Controller, Get, Inject, Param, Query, UseGuards } from '@nestjs/common';
-import { withTenant, type Database, type Tx } from '@kitchos/database';
+import { withTenant, type Database } from '@kitchos/database';
 import type { JournalEntryView, LedgerReconciliation, TrialBalance } from '@kitchos/contracts';
 import { sql } from 'kysely';
 import { z } from 'zod';
 import { Principal, RequirePermission, StaffAuthGuard } from '../auth/auth.guard.ts';
 import type { StaffPrincipal } from '../auth/auth.service.ts';
 import { DB } from '../infra/tokens.ts';
-import { UuidParam, ZodPipe } from '../infra/zod.ts';
-import { LedgerConsumer } from './ledger.consumer.ts';
+import { BusinessDay, UuidParam, ZodPipe } from '../infra/zod.ts';
+import { ReconciliationService } from './reconciliation.service.ts';
 
 const DateRange = z
   .object({
-    from: z.iso.date(),
-    to: z.iso.date(),
+    from: BusinessDay,
+    to: BusinessDay,
     limit: z.coerce.number().int().min(1).max(500).default(100),
   })
   .refine((q) => q.from <= q.to, 'from must not be after to');
-const OneDay = z.object({ businessDate: z.iso.date() });
+const OneDay = z.object({ businessDate: BusinessDay });
 
 const num = (v: unknown) => Number(v ?? 0);
 
@@ -26,7 +26,7 @@ const num = (v: unknown) => Number(v ?? 0);
 export class AccountingController {
   constructor(
     @Inject(DB) private readonly db: Database,
-    @Inject(LedgerConsumer) private readonly ledger: LedgerConsumer,
+    @Inject(ReconciliationService) private readonly reconciler: ReconciliationService,
   ) {}
 
   /** Today's business date in the restaurant's timezone and cutoff (the default for reports). */
@@ -173,108 +173,6 @@ export class AccountingController {
     @Query(new ZodPipe(OneDay)) q: z.output<typeof OneDay>,
     @Principal() p: StaffPrincipal,
   ): Promise<LedgerReconciliation> {
-    return withTenant(this.db, p, async (tx) => {
-      const day = q.businessDate;
-      const orders = await tx
-        .selectFrom('orders')
-        .select([
-          (x) =>
-            x.fn.coalesce(x.fn.sum<number>(sql`total_cents - tax_cents`), sql<number>`0`).as('net'),
-          (x) => x.fn.coalesce(x.fn.sum<number>('tax_cents'), sql<number>`0`).as('gst'),
-        ])
-        .where('restaurant_id', '=', restaurantId)
-        .where('status', '=', 'completed')
-        .where(sql<boolean>`app.business_date(restaurant_id, completed_at) = ${day}::date`)
-        .executeTakeFirstOrThrow();
-      const payments = await tx
-        .selectFrom('payments')
-        .select((x) => x.fn.coalesce(x.fn.sum<number>('amount_cents'), sql<number>`0`).as('cents'))
-        .where('restaurant_id', '=', restaurantId)
-        .where('captured_at', 'is not', null)
-        .where(sql<boolean>`app.business_date(restaurant_id, captured_at) = ${day}::date`)
-        .executeTakeFirstOrThrow();
-      const net = await this.sumByKey(tx, restaurantId, day, 'sale_recognition');
-      const receipts = await this.sumByKey(tx, restaurantId, day, 'payment_receipt');
-      const refundEntries = await this.sumByKey(tx, restaurantId, day, 'refund');
-      const refunds = await tx
-        .selectFrom('refunds')
-        .select((x) => x.fn.coalesce(x.fn.sum<number>('amount_cents'), sql<number>`0`).as('cents'))
-        .where('restaurant_id', '=', restaurantId)
-        .where(sql<boolean>`app.business_date(restaurant_id, created_at) = ${day}::date`)
-        .executeTakeFirstOrThrow();
-      const backlog = await tx
-        .selectFrom('outbox_events as o')
-        .leftJoin('inbox_events as i', (j) =>
-          j.onRef('i.event_id', '=', 'o.id').on('i.consumer', '=', this.ledger.name),
-        )
-        .leftJoin('event_consumer_failures as f', (j) =>
-          j.onRef('f.event_id', '=', 'o.id').on('f.consumer', '=', this.ledger.name),
-        )
-        .select([
-          (x) =>
-            x.fn
-              .count<string>('o.id')
-              .filterWhere((w) => w.and([w('i.event_id', 'is', null), w('f.dead_at', 'is', null)]))
-              .as('pending'),
-          (x) => x.fn.count<string>('o.id').filterWhere('f.dead_at', 'is not', null).as('dead'),
-        ])
-        .where('o.restaurant_id', '=', restaurantId)
-        .where('o.event_type', 'in', [...this.ledger.eventTypes])
-        // Only events that belong to the reconciled business day.
-        .where(sql<boolean>`app.business_date(o.restaurant_id, o.occurred_at) = ${day}::date`)
-        .executeTakeFirstOrThrow();
-
-      const result = {
-        businessDate: day,
-        completedOrdersNetCents: num(orders.net),
-        journalNetSalesCents: (net.get('sales_revenue') ?? 0) + (net.get('sales_discounts') ?? 0),
-        capturedPaymentsCents: num(payments.cents),
-        journalReceiptsCents: receipts.get('customer_deposits') ?? 0,
-        completedOrdersGstCents: num(orders.gst),
-        journalGstCents: net.get('gst_payable') ?? 0,
-        refundsCents: num(refunds.cents),
-        // Refund entries debit deposits (cancelled orders) or returns + GST (handed-over orders).
-        journalRefundsCents: -(
-          (refundEntries.get('customer_deposits') ?? 0) +
-          (refundEntries.get('sales_returns') ?? 0) +
-          (refundEntries.get('gst_payable') ?? 0)
-        ),
-        pendingEvents: num(backlog.pending),
-        deadLetteredEvents: num(backlog.dead),
-      };
-      return {
-        ...result,
-        reconciled:
-          result.completedOrdersNetCents === result.journalNetSalesCents &&
-          result.capturedPaymentsCents === result.journalReceiptsCents &&
-          result.completedOrdersGstCents === result.journalGstCents &&
-          result.refundsCents === result.journalRefundsCents &&
-          result.pendingEvents === 0 &&
-          result.deadLetteredEvents === 0,
-      };
-    });
-  }
-
-  /** Net credit (credit − debit) per system account for one entry type on one day. */
-  private async sumByKey(
-    tx: Tx,
-    restaurantId: string,
-    day: string,
-    entryType: string,
-  ): Promise<Map<string, number>> {
-    const rows = await tx
-      .selectFrom('journal_lines as l')
-      .innerJoin('journal_entries as e', 'e.id', 'l.entry_id')
-      .innerJoin('accounts as a', 'a.id', 'l.account_id')
-      .select([
-        'a.system_key',
-        (x) => x.fn.sum<number>(sql`l.credit_cents - l.debit_cents`).as('net'),
-      ])
-      .where('e.restaurant_id', '=', restaurantId)
-      .where('e.business_date', '=', day)
-      .where('e.entry_type', '=', entryType)
-      .groupBy('a.system_key')
-      .execute();
-    return new Map(rows.map((r) => [r.system_key ?? '', num(r.net)]));
+    return withTenant(this.db, p, (tx) => this.reconciler.forDay(tx, restaurantId, q.businessDate));
   }
 }

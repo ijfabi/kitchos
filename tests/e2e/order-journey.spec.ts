@@ -134,6 +134,8 @@ test('a manager refunds part of a finished order and the books show it, still re
   const target = page.locator(`[data-testid="order-card"][data-order-number="${orderNumber}"]`);
   await target.getByRole('button', { name: 'Refund', exact: true }).click();
   const form = target.getByRole('form', { name: /Refund order/ });
+  // A goodwill amount, not tied to items.
+  await form.getByRole('button', { name: 'By amount' }).click();
   await form.getByLabel('Refund amount').fill('2.00');
   await form.getByLabel('Refund reason').selectOption('quality');
   await form.getByRole('button', { name: 'Refund $2.00' }).click();

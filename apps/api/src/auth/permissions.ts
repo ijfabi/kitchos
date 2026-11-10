@@ -21,6 +21,8 @@ export const PERMISSIONS = [
   'payments.refund',
   'cash.drawer',
   'cash.manage',
+  'cash.admin',
+  'day.close',
   'reports.view',
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
@@ -49,6 +51,8 @@ const MANAGER: Permission[] = [
   'inventory.adjust',
   'inventory.approve',
   'waste.approve',
+  'cash.admin',
+  'day.close',
   'reports.view',
 ];
 const OVERSIGHT: Permission[] = ['orders.view', 'kitchen.view', 'inventory.view', 'reports.view'];

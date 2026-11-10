@@ -47,7 +47,9 @@ exactly-once consumption, shortage policies, reconciliation query.
 Done (Milestone 3): waste registration with physical/financial separation, remakes, approval
 threshold + reversal, waste summary, direct goods receipts, physical counts with variance and
 approval, standard-cost valuation.
-Next: waste + inventory UI, transfers between stores, lots & expiry, unit conversions, moving-
+Done (Milestone 10): inventory and waste UI for crew and managers; waste capped cumulatively per
+order line; stock balances bounded to the range the system can read back.
+Next: transfers between stores, lots & expiry, unit conversions, moving-
 average valuation, batch production, low-stock alerts, theoretical vs actual usage report.
 
 ## Phase 3 — Finance and management 🟡
@@ -56,7 +58,15 @@ Done (Milestone 6): in-process event dispatcher; double-entry journal with DB-en
 append-only and closed-period rules; payment and sale-recognition postings; trial balance,
 journal and reconciliation views (Books screen).
 Done (Milestone 7): refunds and payment reversal. Done (Milestone 8): cash drawers and till
-sessions with blind counts, variance approval and drawer postings (ADR-0015).
+sessions with blind counts, variance approval and drawer postings (ADR-0015). Done (Milestone 9):
+inventory valuation postings — COGS, waste and reclassification, receipts, counts, opening stock —
+with the stock ledger reconciled to the Inventory account (ADR-0016). Done (Milestone 11):
+business-day close, drawer admin and retry of failed postings (ADR-0017). Done (Milestone 12):
+food cost and gross profit report from the journal. Done (Milestone 13): reconciliation per
+tender and per entry (R-030). Done (Milestone 14): prepared food recorded as waste on cancel and
+refund (R-032). Done (Milestone 15): refunds by item with per-line GST, replace an item, and live
+figures for managers (R-019 for items, R-028, R-035). A separate shift close is
+not done.
 
 Double-entry journal (immutable, balanced, reversals), posting rules from outbox events via an
 idempotent consumer, refunds and payment reversal, cash drawers and till sessions, shift and
@@ -92,7 +102,5 @@ reliability drills, deployment docs, measured benchmark report.
 
 ## Immediate next tasks
 
-1. Inventory valuation postings (COGS on consumption, waste expense, reclassification).
-2. Inventory and waste UI for crew and managers.
-3. Shift and business-day close built on drawer sessions (all drawers counted, day totals,
-   cash per business date), plus a drawer admin API.
+1. Recipe (theoretical) cost of what was sold, from completed order lines net of returns, beside
+   actual food cost (R-031).

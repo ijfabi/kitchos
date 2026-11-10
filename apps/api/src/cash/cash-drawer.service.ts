@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { withTenant, type Database, type Tx } from '@kitchos/database';
-import type { DrawerSessionView, DrawerView } from '@kitchos/contracts';
+import type { DrawerAdminView, DrawerSessionView, DrawerView } from '@kitchos/contracts';
 import { expectedDrawerCash, type DrawerFacts } from '@kitchos/domain';
 import { sql } from 'kysely';
 import type { Permission } from '../auth/permissions.ts';
@@ -153,6 +153,101 @@ export class CashDrawerService {
     });
   }
 
+  async listAllDrawers(ctx: { orgId: string; restaurantId: string }): Promise<DrawerAdminView[]> {
+    return withTenant(this.db, ctx, (tx) => this.adminDrawers(tx, ctx.restaurantId));
+  }
+
+  async createDrawer(
+    ctx: CashContext,
+    input: { code: string; name: string },
+  ): Promise<DrawerAdminView[]> {
+    return withTenant(this.db, ctx, async (tx) => {
+      const row = await tx
+        .insertInto('cash_drawers')
+        .values({
+          org_id: ctx.orgId,
+          restaurant_id: ctx.restaurantId,
+          code: input.code,
+          name: input.name,
+        })
+        .onConflict((oc) => oc.columns(['restaurant_id', 'code']).doNothing())
+        .returning('id')
+        .executeTakeFirst();
+      if (!row) {
+        throw new ApiException(409, 'DRAWER_CODE_TAKEN', 'A drawer with that code already exists');
+      }
+      await audit(tx, {
+        orgId: ctx.orgId,
+        restaurantId: ctx.restaurantId,
+        actorUserId: ctx.userId,
+        action: 'drawer.create',
+        entityType: 'cash_drawer',
+        entityId: row.id,
+        data: input,
+      });
+      return this.adminDrawers(tx, ctx.restaurantId);
+    });
+  }
+
+  /** Retiring a drawer keeps its history; it cannot happen while a session is unfinished. */
+  async setDrawerActive(
+    ctx: CashContext,
+    drawerId: string,
+    active: boolean,
+  ): Promise<DrawerAdminView[]> {
+    return withTenant(this.db, ctx, async (tx) => {
+      const drawer = await tx
+        .selectFrom('cash_drawers')
+        .select(['id', 'active'])
+        .where('id', '=', drawerId)
+        .where('restaurant_id', '=', ctx.restaurantId)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!drawer) throw notFound('Cash drawer');
+      if (drawer.active !== active) {
+        if (!active) {
+          const busy = await tx
+            .selectFrom('drawer_sessions')
+            .select('id')
+            .where('drawer_id', '=', drawerId)
+            .where('status', '<>', 'closed')
+            .executeTakeFirst();
+          if (busy) throw new ApiException(409, 'DRAWER_IN_USE', 'That drawer has an open session');
+        }
+        await tx.updateTable('cash_drawers').set({ active }).where('id', '=', drawerId).execute();
+        await audit(tx, {
+          orgId: ctx.orgId,
+          restaurantId: ctx.restaurantId,
+          actorUserId: ctx.userId,
+          action: active ? 'drawer.reactivate' : 'drawer.retire',
+          entityType: 'cash_drawer',
+          entityId: drawerId,
+          data: {},
+        });
+      }
+      return this.adminDrawers(tx, ctx.restaurantId);
+    });
+  }
+
+  private async adminDrawers(tx: Tx, restaurantId: string): Promise<DrawerAdminView[]> {
+    const rows = await tx
+      .selectFrom('cash_drawers as d')
+      .leftJoin('drawer_sessions as s', (j) =>
+        j.onRef('s.drawer_id', '=', 'd.id').on('s.status', '<>', 'closed'),
+      )
+      .select(['d.id', 'd.code', 'd.name', 'd.active', 's.id as session_id'])
+      .where('d.restaurant_id', '=', restaurantId)
+      .orderBy('d.code')
+      .execute();
+    return rows.map((r) => ({
+      id: r.id,
+      code: r.code,
+      name: r.name,
+      active: r.active,
+      inUse: r.session_id !== null,
+    }));
+  }
+
   async open(
     ctx: CashContext,
     drawerId: string,
@@ -164,6 +259,7 @@ export class CashDrawerService {
         .select(['id', 'active'])
         .where('id', '=', drawerId)
         .where('restaurant_id', '=', ctx.restaurantId)
+        .forShare() // a concurrent retirement (FOR UPDATE) sees this session, or this sees it retired
         .executeTakeFirst();
       if (!drawer || !drawer.active) throw notFound('Cash drawer');
       const alreadyMine = () =>

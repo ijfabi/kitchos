@@ -20,6 +20,7 @@ import {
   StaffCreateOrderRequestSchema,
   StaffPaymentRequestSchema,
   type OrderView,
+  type PreparedItemsView,
   type StaffPaymentRequest,
 } from '@kitchos/contracts';
 import type { Response } from 'express';
@@ -66,11 +67,12 @@ export class StaffOrdersController {
     @Body(new ZodPipe(RefundRequestSchema)) body: z.output<typeof RefundRequestSchema>,
     @Headers('idempotency-key') idempotencyKey: string | undefined,
     @Principal() p: StaffPrincipal,
+    @CurrentPermissions() permissions: Set<Permission>,
     @Res({ passthrough: true }) res: Response,
   ): Promise<OrderView> {
     const key = requireIdempotencyKey(idempotencyKey);
     const result = await this.refunds.refund(
-      { orgId: p.orgId, restaurantId, userId: p.userId },
+      { orgId: p.orgId, restaurantId, userId: p.userId, permissions },
       orderId,
       body,
       key,
@@ -203,7 +205,7 @@ export class StaffOrdersController {
   cancel(
     @Param('restaurantId', UuidParam) restaurantId: string,
     @Param('orderId', UuidParam) orderId: string,
-    @Body(new ZodPipe(CancelOrderRequestSchema)) body: { reason: string },
+    @Body(new ZodPipe(CancelOrderRequestSchema)) body: z.output<typeof CancelOrderRequestSchema>,
     @Principal() p: StaffPrincipal,
     @CurrentPermissions() permissions: Set<Permission>,
   ): Promise<OrderView> {
@@ -214,6 +216,19 @@ export class StaffOrdersController {
       reason: body.reason,
       actor: { userId: p.userId },
       permissions,
+      waste: body.waste,
+      preparedVersion: body.preparedVersion,
     });
+  }
+
+  /** Prepared items and how much of each can still be recorded as waste (for cancel and refund). */
+  @Get(':orderId/prepared-items')
+  @RequirePermission('orders.view')
+  preparedItems(
+    @Param('restaurantId', UuidParam) restaurantId: string,
+    @Param('orderId', UuidParam) orderId: string,
+    @Principal() p: StaffPrincipal,
+  ): Promise<PreparedItemsView> {
+    return this.orders.preparedItems({ orgId: p.orgId, restaurantId }, orderId);
   }
 }

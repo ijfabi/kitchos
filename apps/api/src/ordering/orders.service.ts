@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { withTenant, type Database, type Tx } from '@kitchos/database';
 import type {
+  PreparedItemsView,
   OrderDiscountView,
   OrderLineInput,
   OrderView,
@@ -30,6 +31,7 @@ import { DB } from '../infra/tokens.ts';
 import { InventoryService, type Actor } from '../inventory/inventory.service.ts';
 import { resolveCashSession } from '../cash/cash-drawer.service.ts';
 import { KitchenService, routeToStation } from '../kitchen/kitchen.service.ts';
+import { StockOperationsService } from '../inventory/stock-operations.service.ts';
 
 export interface PlaceOrderInput {
   orgId: string;
@@ -67,6 +69,7 @@ export class OrdersService {
     @Inject(MenuRepository) private readonly menus: MenuRepository,
     @Inject(InventoryService) private readonly inventory: InventoryService,
     @Inject(KitchenService) private readonly kitchen: KitchenService,
+    @Inject(StockOperationsService) private readonly stockOps: StockOperationsService,
   ) {}
 
   // ------------------------------------------------------------- place
@@ -549,8 +552,9 @@ export class OrdersService {
 
   /**
    * Cancels an order. Unconsumed reservations are released. Stock already
-   * consumed is NOT returned (invariant 11): the prepared food is a loss to be
-   * classified as waste by the waste module, flagged on the event.
+   * consumed is NOT returned (invariant 11): the prepared food is recorded as
+   * waste in the same transaction (already consumed, so no second deduction),
+   * for whatever portions staff have not already recorded.
    * Cancelling once production has begun requires a manager-level permission.
    */
   async cancel(args: {
@@ -560,6 +564,9 @@ export class OrdersService {
     reason: string;
     actor: Actor;
     permissions: Set<Permission>;
+    /** Portions of prepared food to record as waste (the whole list); omitted: all of it. */
+    waste?: readonly { orderLineId: string; quantity: number }[] | undefined;
+    preparedVersion?: string | undefined;
   }): Promise<OrderView> {
     return withTenant(this.db, args, async (tx) => {
       const order = await this.lockOrder(tx, args.orderId, args.restaurantId);
@@ -619,6 +626,26 @@ export class OrdersService {
         .where('status', '=', 'captured')
         .executeTakeFirst();
 
+      // Food already made for this order becomes waste now, not lost in cost of goods sold.
+      const wasteRecordIds = args.actor.userId
+        ? await this.stockOps.wastePreparedFood(
+            tx,
+            {
+              orgId: args.orgId,
+              restaurantId: args.restaurantId,
+              userId: args.actor.userId,
+              permissions: args.permissions,
+            },
+            {
+              orderId: order.id,
+              defaultAll: true,
+              overrides: args.waste,
+              reason: 'cancelled_prepared_order',
+              preparedVersion: args.preparedVersion,
+              notes: `Order #${order.order_number} cancelled: ${args.reason}`,
+            },
+          )
+        : [];
       await audit(tx, {
         orgId: args.orgId,
         restaurantId: args.restaurantId,
@@ -628,7 +655,12 @@ export class OrdersService {
         entityType: 'order',
         entityId: order.id,
         reason: args.reason,
-        data: { fromStatus: order.status, permissionUsed: needed, consumedLineIds: [...consumed] },
+        data: {
+          fromStatus: order.status,
+          permissionUsed: needed,
+          consumedLineIds: [...consumed],
+          wasteRecordIds,
+        },
       });
       await appendEvents(tx, [
         {
@@ -642,6 +674,7 @@ export class OrdersService {
             fromStatus: order.status,
             reason: args.reason,
             consumedLineIds: [...consumed],
+            wasteRecordIds,
             refundRequired: !!captured,
           },
         },
@@ -651,6 +684,24 @@ export class OrdersService {
   }
 
   // ------------------------------------------------------------- queries
+
+  /** Prepared items of an order, for choosing what to record as waste. */
+  async preparedItems(
+    ctx: { orgId: string; restaurantId: string },
+    orderId: string,
+  ): Promise<PreparedItemsView> {
+    return withTenant(this.db, ctx, async (tx) => {
+      const order = await tx
+        .selectFrom('orders')
+        .select('id')
+        .where('id', '=', orderId)
+        .where('restaurant_id', '=', ctx.restaurantId)
+        .executeTakeFirst();
+      if (!order) throw notFound('Order');
+      const items = await this.stockOps.preparedLines(tx, order.id);
+      return { version: this.stockOps.preparedVersion(items), items };
+    });
+  }
 
   async getByPublicToken(token: string): Promise<OrderView> {
     const ref = (
@@ -719,7 +770,7 @@ export class OrdersService {
   private async lockOrder(tx: Tx, orderId: string, restaurantId?: string) {
     let q = tx
       .selectFrom('orders')
-      .select(['id', 'restaurant_id', 'status', 'version', 'total_cents'])
+      .select(['id', 'restaurant_id', 'status', 'version', 'total_cents', 'order_number'])
       .where('id', '=', orderId);
     if (restaurantId) q = q.where('restaurant_id', '=', restaurantId);
     const order = await q.forUpdate().executeTakeFirst();
@@ -792,6 +843,17 @@ export class OrdersService {
       .where('f.order_id', '=', orderId)
       .orderBy('f.id')
       .execute();
+    const refundItems = await tx
+      .selectFrom('refund_lines as r')
+      .innerJoin('order_lines as l', 'l.id', 'r.order_line_id')
+      .select(['r.refund_id', 'r.order_line_id', 'r.quantity', 'r.amount_cents', 'l.name'])
+      .where('l.order_id', '=', orderId)
+      .orderBy('l.line_no')
+      .execute();
+    const refundedUnits = new Map<string, number>();
+    for (const r of refundItems) {
+      refundedUnits.set(r.order_line_id, (refundedUnits.get(r.order_line_id) ?? 0) + r.quantity);
+    }
     const discount = await tx
       .selectFrom('order_discounts as d')
       .innerJoin('users as a', 'a.id', 'd.applied_by')
@@ -860,6 +922,8 @@ export class OrdersService {
           quantity: l.quantity,
           unitPriceCents: l.unit_price_cents,
           lineTotalCents: l.line_total_cents,
+          netCents: l.line_total_cents - l.discount_cents,
+          refundedQuantity: refundedUnits.get(l.id) ?? 0,
           modifiers: modsFor(l.id),
           components: lines
             .filter((c) => c.parent_line_id === l.id)
@@ -879,6 +943,9 @@ export class OrdersService {
         reason: f.reason as OrderView['refunds'][number]['reason'],
         requestedBy: f.display_name,
         createdAt: f.created_at.toISOString(),
+        items: refundItems
+          .filter((r) => r.refund_id === f.id)
+          .map((r) => ({ name: r.name, quantity: r.quantity, amountCents: r.amount_cents })),
       })),
       discount: discount
         ? {

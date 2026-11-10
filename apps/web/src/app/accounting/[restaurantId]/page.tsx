@@ -24,6 +24,12 @@ const ENTRY_LABEL: Record<string, string> = {
   drawer_float: 'Drawer float issued',
   drawer_movement: 'Drawer movement',
   drawer_close: 'Drawer closed to safe',
+  cogs: 'Ingredients consumed',
+  waste: 'Waste',
+  waste_reversal: 'Waste reversed',
+  goods_receipt: 'Goods received',
+  stock_count: 'Stock count adjustment',
+  opening_stock: 'Opening stock',
   reversal: 'Reversal',
   adjustment: 'Adjustment',
 };
@@ -129,6 +135,32 @@ function Books({ session }: { session: StaffSession }) {
                         'Payments captured',
                         rec.data.capturedPaymentsCents,
                         rec.data.journalReceiptsCents,
+                      ],
+                      ['Refunds', rec.data.refundsCents, rec.data.journalRefundsCents],
+                      [
+                        'Card, net of refunds',
+                        rec.data.cardNetCents,
+                        rec.data.journalCardClearingCents,
+                      ],
+                      [
+                        'Cash, net of refunds',
+                        rec.data.cashNetCents,
+                        rec.data.journalCashOnHandCents,
+                      ],
+                      [
+                        'Cash rounding',
+                        rec.data.cashRoundingCents,
+                        rec.data.journalCashRoundingCents,
+                      ],
+                      [
+                        'Drawer variances',
+                        rec.data.drawerVarianceCents,
+                        rec.data.journalCashOverShortCents,
+                      ],
+                      [
+                        'Inventory moved (stock ledger)',
+                        rec.data.stockMovementsValueCents,
+                        rec.data.journalInventoryCents,
                       ],
                     ] as const
                   ).map(([label, source, posted]) => (

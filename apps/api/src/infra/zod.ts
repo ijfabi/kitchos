@@ -18,3 +18,6 @@ export class ZodPipe<T extends z.ZodType> implements PipeTransform<unknown, z.ou
 }
 
 export const UuidParam = new ZodPipe(z.uuid());
+
+/** A calendar date PostgreSQL can hold: `z.iso.date` also accepts year 0000. */
+export const BusinessDay = z.iso.date().refine((d) => d >= '0001-01-01', 'Invalid date');

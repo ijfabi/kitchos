@@ -12,10 +12,12 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import {
+  CreateDrawerRequestSchema,
   DrawerApproveRequestSchema,
   DrawerCountRequestSchema,
   DrawerMovementRequestSchema,
   OpenDrawerSessionRequestSchema,
+  type DrawerAdminView,
   type DrawerSessionView,
   type DrawerView,
 } from '@kitchos/contracts';
@@ -48,6 +50,61 @@ export class CashController {
     @Principal() p: StaffPrincipal,
   ): Promise<DrawerView[]> {
     return this.cash.listDrawers({ orgId: p.orgId, restaurantId });
+  }
+
+  @Get('drawers/all')
+  @RequirePermission('cash.admin')
+  allDrawers(
+    @Param('restaurantId', UuidParam) restaurantId: string,
+    @Principal() p: StaffPrincipal,
+  ): Promise<DrawerAdminView[]> {
+    return this.cash.listAllDrawers({ orgId: p.orgId, restaurantId });
+  }
+
+  @Post('drawers')
+  @RequirePermission('cash.admin')
+  createDrawer(
+    @Param('restaurantId', UuidParam) restaurantId: string,
+    @Body(new ZodPipe(CreateDrawerRequestSchema)) body: z.output<typeof CreateDrawerRequestSchema>,
+    @Principal() p: StaffPrincipal,
+    @CurrentPermissions() permissions: Set<Permission>,
+  ): Promise<DrawerAdminView[]> {
+    return this.cash.createDrawer(
+      { orgId: p.orgId, restaurantId, userId: p.userId, permissions },
+      body,
+    );
+  }
+
+  @Post('drawers/:drawerId/retire')
+  @HttpCode(200)
+  @RequirePermission('cash.admin')
+  retireDrawer(
+    @Param('restaurantId', UuidParam) restaurantId: string,
+    @Param('drawerId', UuidParam) drawerId: string,
+    @Principal() p: StaffPrincipal,
+    @CurrentPermissions() permissions: Set<Permission>,
+  ): Promise<DrawerAdminView[]> {
+    return this.cash.setDrawerActive(
+      { orgId: p.orgId, restaurantId, userId: p.userId, permissions },
+      drawerId,
+      false,
+    );
+  }
+
+  @Post('drawers/:drawerId/reactivate')
+  @HttpCode(200)
+  @RequirePermission('cash.admin')
+  reactivateDrawer(
+    @Param('restaurantId', UuidParam) restaurantId: string,
+    @Param('drawerId', UuidParam) drawerId: string,
+    @Principal() p: StaffPrincipal,
+    @CurrentPermissions() permissions: Set<Permission>,
+  ): Promise<DrawerAdminView[]> {
+    return this.cash.setDrawerActive(
+      { orgId: p.orgId, restaurantId, userId: p.userId, permissions },
+      drawerId,
+      true,
+    );
   }
 
   @Post('drawers/:drawerId/sessions')

@@ -7,6 +7,7 @@ import { ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useState } from 'react';
+import { DrawerAdmin } from '@/components/cash/drawer-admin';
 import { StaffGate } from '@/components/staff-gate';
 import { Badge, Button, Card, EmptyState, Logo, Spinner } from '@/components/ui';
 import { api, get } from '@/lib/api';
@@ -59,6 +60,9 @@ function Cash({ session }: { session: StaffSession }) {
         </div>
       </header>
       <main className="mx-auto max-w-3xl space-y-3 p-4">
+        {restaurant?.permissions.includes('cash.admin') && (
+          <DrawerAdmin restaurantId={restaurantId} token={token} />
+        )}
         {sessions.isPending ? (
           <Spinner label="Loading drawers" />
         ) : sessions.isError ? (

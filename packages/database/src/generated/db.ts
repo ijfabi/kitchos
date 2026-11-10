@@ -70,6 +70,19 @@ export interface Brands {
   slug: string;
 }
 
+export interface BusinessDayCloses {
+  business_date: string;
+  closed_at: Generated<Timestamp>;
+  closed_by: string;
+  drawers: Json;
+  id: Generated<string>;
+  notes: string | null;
+  org_id: string;
+  restaurant_id: string;
+  totals: Json;
+  warnings: Json;
+}
+
 export interface CashDrawers {
   active: Generated<boolean>;
   code: string;
@@ -204,6 +217,7 @@ export interface JournalEntries {
   id: Generated<string>;
   org_id: string;
   posted_at: Generated<Timestamp>;
+  posted_late_from: string | null;
   restaurant_id: string;
   reverses_entry_id: string | null;
   source_event_id: string | null;
@@ -497,11 +511,21 @@ export interface RecipeVersions {
   version: number;
 }
 
+export interface RefundLines {
+  amount_cents: ColumnType<number, number | bigint, number | bigint>;
+  gst_cents: ColumnType<number, number | bigint, number | bigint>;
+  order_line_id: string;
+  org_id: string;
+  quantity: number;
+  refund_id: string;
+}
+
 export interface Refunds {
   amount_cents: ColumnType<number, number | bigint, number | bigint>;
   cash_rounding_cents: Generated<ColumnType<number, number | bigint, number | bigint>>;
   created_at: Generated<Timestamp>;
   drawer_session_id: string | null;
+  gst_cents: ColumnType<number, number | bigint, number | bigint> | null;
   id: Generated<string>;
   method: string;
   note: string | null;
@@ -650,6 +674,8 @@ export interface StockMovements {
   source_id: string;
   source_key: Generated<string>;
   source_type: string;
+  unit_cost: Numeric | null;
+  value_cents: ColumnType<number, number | bigint, number | bigint> | null;
 }
 
 export interface StockReservations {
@@ -715,6 +741,7 @@ export interface DB {
   accounts: Accounts;
   audit_log: AuditLog;
   brands: Brands;
+  business_day_closes: BusinessDayCloses;
   cash_drawers: CashDrawers;
   combo_components: ComboComponents;
   devices: Devices;
@@ -749,6 +776,7 @@ export interface DB {
   recipe_lines: RecipeLines;
   recipe_versions: RecipeVersions;
   recipes: Recipes;
+  refund_lines: RefundLines;
   refunds: Refunds;
   regions: Regions;
   restaurant_event_sequences: RestaurantEventSequences;

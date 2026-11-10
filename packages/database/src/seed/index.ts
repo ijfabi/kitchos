@@ -402,10 +402,31 @@ async function seedRestaurant(db: Database, c: RestaurantSeedContext): Promise<s
       .execute();
   }
 
+  // The opening stock is announced like any other stock operation, so the ledger
+  // values it into the journal (Dr Inventory / Cr Opening balance equity).
   await db
     .insertInto('restaurant_event_sequences')
-    .values({ org_id: orgId, restaurant_id: restaurant.id })
+    .values({
+      org_id: orgId,
+      restaurant_id: restaurant.id,
+      last_sequence: stockEntries.length > 0 ? 1 : 0,
+    })
     .execute();
+  if (stockEntries.length > 0) {
+    await db
+      .insertInto('outbox_events')
+      .values({
+        org_id: orgId,
+        restaurant_id: restaurant.id,
+        store_sequence: 1,
+        aggregate_type: 'stock',
+        aggregate_id: openingId,
+        aggregate_version: 1,
+        event_type: 'inventory.opening_stock',
+        payload: JSON.stringify({ lines: stockEntries.length }),
+      })
+      .execute();
+  }
   return restaurant.id;
 }
 

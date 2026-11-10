@@ -137,6 +137,15 @@ describe('double-entry journal from domain events', () => {
     expect(await entriesFor(await paymentId(order.id))).toEqual({
       payment_receipt: { cash_on_hand: 1160, cash_rounding: 1, customer_deposits: -1161 },
     });
+    // The meal's drink is consumed at acceptance: its cost is the order's COGS
+    // entry, exactly the value the stock ledger recorded (ADR-0016).
+    const { rows } = await sql<{ v: string }>`
+      select -coalesce(sum(m.value_cents), 0) as v from stock_movements m
+      join order_lines l on l.id = m.source_id
+      where l.order_id = ${order.id}::uuid and l.consumption_point = 'order_accepted'
+        and m.movement_type = 'production_consumption'`.execute(h.owner);
+    const acceptCost = Number(rows[0]!.v);
+    expect(acceptCost).toBeGreaterThan(0);
     expect(await entriesFor(order.id)).toEqual({
       sale_recognition: {
         customer_deposits: 1161,
@@ -144,6 +153,7 @@ describe('double-entry journal from domain events', () => {
         sales_revenue: -1173,
         gst_payable: -106,
       },
+      cogs: { cogs: acceptCost, inventory: -acceptCost },
     });
   });
 
@@ -408,7 +418,8 @@ describe('double-entry journal from domain events', () => {
       .get(`/v1/restaurants/${centralId}/accounting/reconciliation?businessDate=${day}`)
       .set(bearer(manager))
       .expect(200);
-    expect(stale.body).toMatchObject({ pendingEvents: 1, reconciled: false });
+    // payment.captured and order.accepted (which posts accept-time COGS).
+    expect(stale.body).toMatchObject({ pendingEvents: 2, reconciled: false });
     await dispatcher.runOnce();
 
     const journal = await h.http

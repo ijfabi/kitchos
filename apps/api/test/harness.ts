@@ -206,21 +206,46 @@ export async function setAvailable(
     .where('org_id', '=', loc.org_id)
     .where('sku', '=', sku)
     .executeTakeFirstOrThrow();
-  await h.owner
-    .insertInto('stock_movements')
-    .values({
-      org_id: loc.org_id,
-      restaurant_id: loc.restaurant_id,
-      location_id: loc.id,
-      inventory_item_id: inv.id,
-      movement_type: 'count_adjustment',
-      quantity_delta: String(delta),
-      source_type: 'test_fixture',
-      source_id: randomUUID(),
-      occurred_at: sql<Date>`now()`,
-      business_date: sql<string>`current_date`,
-    })
-    .execute();
+  // Recorded like a real stock count (movement + inventory.counted event in one
+  // transaction), so the ledger values it into the journal and books reconcile.
+  const countId = randomUUID();
+  await h.owner.transaction().execute(async (trx) => {
+    await trx
+      .insertInto('stock_movements')
+      .values({
+        org_id: loc.org_id,
+        restaurant_id: loc.restaurant_id,
+        location_id: loc.id,
+        inventory_item_id: inv.id,
+        movement_type: 'count_adjustment',
+        quantity_delta: String(delta),
+        source_type: 'stock_count',
+        source_id: countId,
+        occurred_at: sql<Date>`now()`,
+        business_date: sql<string>`app.business_date(${loc.restaurant_id}::uuid, now())`,
+        notes: 'Test fixture',
+      })
+      .execute();
+    const { last_sequence } = await trx
+      .updateTable('restaurant_event_sequences')
+      .set((eb) => ({ last_sequence: eb('last_sequence', '+', 1) }))
+      .where('restaurant_id', '=', loc.restaurant_id)
+      .returning('last_sequence')
+      .executeTakeFirstOrThrow();
+    await trx
+      .insertInto('outbox_events')
+      .values({
+        org_id: loc.org_id,
+        restaurant_id: loc.restaurant_id,
+        store_sequence: last_sequence,
+        aggregate_type: 'stock',
+        aggregate_id: countId,
+        aggregate_version: 1,
+        event_type: 'inventory.counted',
+        payload: JSON.stringify({ fixture: true }),
+      })
+      .execute();
+  });
 }
 
 /** Ledger reconciliation: every balance equals the sum of its movements and active reservations. */

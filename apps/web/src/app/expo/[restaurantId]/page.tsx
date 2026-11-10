@@ -6,7 +6,8 @@ import { clsx } from 'clsx';
 import { ArrowLeft, Ban, HandPlatter } from 'lucide-react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
+import { PreparedWaste, type WasteChoice } from '@/components/order/prepared-waste';
 import { StaffGate } from '@/components/staff-gate';
 import { Badge, Button, Card, EmptyState, Logo, Spinner } from '@/components/ui';
 import { api, ApiError, get } from '@/lib/api';
@@ -36,13 +37,16 @@ function Expo({ session }: { session: StaffSession }) {
       ),
     refetchInterval: 10_000,
   });
-  useLiveEvents(
-    restaurantId,
-    token,
-    () => void qc.invalidateQueries({ queryKey: ['orders', restaurantId] }),
-  );
+  useLiveEvents(restaurantId, token, () => {
+    void qc.invalidateQueries({ queryKey: ['orders', restaurantId] });
+    void qc.invalidateQueries({ queryKey: ['prepared-items', restaurantId] });
+  });
 
   const [error, setError] = useState<string | null>(null);
+  const [cancelling, setCancelling] = useState<string | null>(null);
+  const [cancelReason, setCancelReason] = useState('');
+  const [waste, setWaste] = useState<WasteChoice | null>(null);
+  const onWaste = useCallback((w: WasteChoice | null) => setWaste(w), []);
   const onError = (err: Error) => {
     if (err instanceof ApiError && err.status === 401) router.replace('/staff');
     setError(err.message);
@@ -58,15 +62,29 @@ function Expo({ session }: { session: StaffSession }) {
     onSettled: () => qc.invalidateQueries({ queryKey: ['orders', restaurantId] }),
   });
   const cancel = useMutation({
-    mutationFn: ({ orderId, reason }: { orderId: string; reason: string }) =>
+    mutationFn: ({
+      orderId,
+      reason,
+      waste,
+    }: {
+      orderId: string;
+      reason: string;
+      waste: WasteChoice | null;
+    }) =>
       api<OrderView>(`/v1/restaurants/${restaurantId}/orders/${orderId}/cancel`, {
         method: 'POST',
         token,
-        body: { reason },
+        body: waste ? { reason, ...waste } : { reason },
       }),
-    onSuccess: () => setError(null),
+    onSuccess: () => {
+      setError(null);
+      setCancelling(null);
+    },
     onError,
-    onSettled: () => qc.invalidateQueries({ queryKey: ['orders', restaurantId] }),
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: ['orders', restaurantId] });
+      void qc.invalidateQueries({ queryKey: ['prepared-items', restaurantId] });
+    },
   });
 
   const all = orders.data ?? [];
@@ -168,19 +186,66 @@ function Expo({ session }: { session: StaffSession }) {
                             <Button
                               variant="secondary"
                               size="lg"
-                              loading={cancel.isPending && cancel.variables?.orderId === o.id}
+                              disabled={cancelling === o.id}
                               onClick={() => {
-                                const reason = window.prompt(
-                                  `Reason for cancelling order #${o.orderNumber}?`,
-                                );
-                                if (reason && reason.trim().length >= 3)
-                                  cancel.mutate({ orderId: o.id, reason: reason.trim() });
+                                setCancelling(o.id);
+                                setCancelReason('');
+                                setWaste(null);
                               }}
                             >
                               <Ban className="size-4" aria-hidden /> Cancel
                             </Button>
                           )}
                         </div>
+                        {cancelling === o.id && (
+                          <form
+                            aria-label={`Cancel order ${o.orderNumber}`}
+                            className="mt-3 space-y-2"
+                            onSubmit={(e) => {
+                              e.preventDefault();
+                              if (cancelReason.trim().length >= 3 && waste && !cancel.isPending) {
+                                cancel.mutate({
+                                  orderId: o.id,
+                                  reason: cancelReason.trim(),
+                                  waste,
+                                });
+                              }
+                            }}
+                          >
+                            <input
+                              aria-label="Cancel reason"
+                              placeholder="Why is it cancelled?"
+                              maxLength={500}
+                              value={cancelReason}
+                              onChange={(e) => setCancelReason(e.target.value)}
+                              className="h-10 w-full rounded-lg border border-line px-3 text-sm"
+                            />
+                            <PreparedWaste
+                              restaurantId={restaurantId}
+                              orderId={o.id}
+                              token={token}
+                              defaultAll
+                              onChange={onWaste}
+                            />
+                            <div className="flex gap-2">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                onClick={() => setCancelling(null)}
+                              >
+                                Keep order
+                              </Button>
+                              <Button
+                                type="submit"
+                                variant="danger"
+                                loading={cancel.isPending}
+                                disabled={cancelReason.trim().length < 3 || !waste}
+                              >
+                                Cancel order
+                              </Button>
+                            </div>
+                          </form>
+                        )}
                       </Card>
                     </li>
                   ))}

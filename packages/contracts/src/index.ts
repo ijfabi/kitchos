@@ -188,6 +188,10 @@ export const OrderLineViewSchema = z.object({
   quantity: z.number().int(),
   unitPriceCents: cents,
   lineTotalCents: cents,
+  /** What the line cost after the order discount: what refunding all of it returns. */
+  netCents: cents,
+  /** Units already refunded by item. */
+  refundedQuantity: z.number().int(),
   modifiers: z.array(z.object({ name: z.string(), priceDeltaCents: cents })),
   components: z.array(
     z.object({
@@ -249,7 +253,41 @@ export const OrderViewSchema = z.object({
 });
 export type OrderView = z.infer<typeof OrderViewSchema>;
 
-export const CancelOrderRequestSchema = z.object({ reason: z.string().trim().min(3).max(500) });
+/**
+ * Portions of prepared food to record as waste, per order line, when cancelling or refunding.
+ * When given, it is the whole answer: unlisted lines record none. When omitted, the default
+ * applies: all prepared portions for a cancellation; by reason for a refund.
+ */
+export const PreparedWasteInputSchema = z
+  .array(z.object({ orderLineId: uuid, quantity: z.number().int().min(0).max(100) }))
+  .max(40)
+  .refine(
+    (ls) => new Set(ls.map((l) => l.orderLineId)).size === ls.length,
+    'Each line may appear once',
+  );
+export type PreparedWasteInput = z.input<typeof PreparedWasteInputSchema>;
+
+/** A prepared order line and how many of its portions can still be recorded as waste. */
+export const PreparedItemViewSchema = z.object({
+  orderLineId: uuid,
+  name: z.string(),
+  quantity: z.number().int(),
+  remaining: z.number().int(),
+});
+export type PreparedItemView = z.infer<typeof PreparedItemViewSchema>;
+
+export const PreparedItemsViewSchema = z.object({
+  /** Echo it back as preparedVersion: the request is refused if the list has changed since. */
+  version: z.string(),
+  items: z.array(PreparedItemViewSchema),
+});
+export type PreparedItemsView = z.infer<typeof PreparedItemsViewSchema>;
+
+export const CancelOrderRequestSchema = z.object({
+  reason: z.string().trim().min(3).max(500),
+  waste: PreparedWasteInputSchema.optional(),
+  preparedVersion: z.string().min(1).max(64).optional(),
+});
 
 // ---------------------------------------------------------------- kitchen
 
@@ -298,6 +336,16 @@ export const StockBalanceViewSchema = z.object({
   available: z.string(),
 });
 export type StockBalanceView = z.infer<typeof StockBalanceViewSchema>;
+
+/** What crew may pick from when recording waste: names only, no stock levels or costs. */
+export const WasteItemViewSchema = z.object({
+  inventoryItemId: uuid,
+  sku: z.string(),
+  name: z.string(),
+  baseUnit: z.string(),
+  category: z.string(),
+});
+export type WasteItemView = z.infer<typeof WasteItemViewSchema>;
 
 export const StockMovementViewSchema = z.object({
   id: uuid,
@@ -392,6 +440,7 @@ export const WasteRecordViewSchema = z.object({
   costCents: cents,
   status: z.enum(['recorded', 'pending_approval', 'approved', 'rejected']),
   recordedBy: z.string(),
+  recordedById: uuid,
   reviewedBy: z.string().nullable(),
   reviewReason: z.string().nullable(),
   stationName: z.string().nullable(),
@@ -622,6 +671,24 @@ export const LedgerReconciliationSchema = z.object({
   /** Refunds made that business day vs refund amounts posted to the journal. */
   refundsCents: cents,
   journalRefundsCents: cents,
+  /** Σ value recorded on that day's stock movements vs the journal's net change in Inventory. */
+  stockMovementsValueCents: cents,
+  journalInventoryCents: cents,
+  /** Card payments less card refunds vs the net change in Card clearing from receipts and refunds. */
+  cardNetCents: cents,
+  journalCardClearingCents: cents,
+  /** Cash taken less cash refunded (with rounding) vs the net change in Cash on hand from them. */
+  cashNetCents: cents,
+  journalCashOnHandCents: cents,
+  /** Cash rounding on payments less refunds vs the journal's Cash rounding from them. */
+  cashRoundingCents: cents,
+  journalCashRoundingCents: cents,
+  /** Receipt and refund entries that do not belong to a source of that amount and day. */
+  unmatchedReceipts: z.number().int().nonnegative(),
+  unmatchedRefunds: z.number().int().nonnegative(),
+  /** Σ variance of drawers closed for that day vs the journal's Cash over/short (over is positive). */
+  drawerVarianceCents: cents,
+  journalCashOverShortCents: cents,
   /** Events for this restaurant the ledger has not processed yet. */
   pendingEvents: z.number().int(),
   deadLetteredEvents: z.number().int(),
@@ -640,14 +707,43 @@ export const REFUND_REASONS = [
   'other',
 ] as const;
 
-export const RefundRequestSchema = z.object({
-  /** Cents to refund; defaults to everything still refundable on the payment. */
-  amountCents: z.number().int().min(1).max(10_000_000).optional(),
-  reason: z.enum(REFUND_REASONS),
-  note: z.string().trim().max(500).optional(),
-  /** Cash refunds: defaults to the refunder's own open drawer session. */
-  drawerSessionId: uuid.optional(),
-});
+export const RefundRequestSchema = z
+  .object({
+    /**
+     * Items to refund in full: order lines (an item, or a whole meal) and how many of each. The
+     * amount is then their net price, worked out by the server, and their prepared food is
+     * recorded as waste. Leave out for a refund by amount.
+     */
+    items: z
+      .array(z.object({ orderLineId: uuid, quantity: z.number().int().min(1).max(50) }))
+      .min(1)
+      .max(40)
+      .refine(
+        (ls) => new Set(ls.map((l) => l.orderLineId)).size === ls.length,
+        'Each line may appear once',
+      )
+      .optional(),
+    /** What the screen showed for the items; refused with 409 if the price has changed since. */
+    expectedAmountCents: z.number().int().min(0).max(10_000_000).optional(),
+    /** A refund by amount (e.g. a duplicate charge); defaults to everything still refundable. */
+    amountCents: z.number().int().min(1).max(10_000_000).optional(),
+    reason: z.enum(REFUND_REASONS),
+    note: z.string().trim().max(500).optional(),
+    /** Cash refunds: defaults to the refunder's own open drawer session. */
+    drawerSessionId: uuid.optional(),
+    /**
+     * Prepared food to record as waste, entered by hand. When omitted: the refunded items' food for
+     * a refund by item, none for a refund by amount.
+     */
+    waste: PreparedWasteInputSchema.optional(),
+    preparedVersion: z.string().min(1).max(64).optional(),
+  })
+  .refine((r) => !(r.items && r.amountCents !== undefined), {
+    message: 'Refund by items or by amount, not both',
+  })
+  .refine((r) => !(r.items && r.reason === 'duplicate_charge'), {
+    message: 'A duplicate charge is refunded by amount: no food came back',
+  });
 export type RefundRequest = z.input<typeof RefundRequestSchema>;
 
 export const RefundViewSchema = z.object({
@@ -660,6 +756,8 @@ export const RefundViewSchema = z.object({
   reason: z.enum(REFUND_REASONS),
   requestedBy: z.string(),
   createdAt: z.string(),
+  /** The items refunded, for a refund by item; empty for a refund by amount. */
+  items: z.array(z.object({ name: z.string(), quantity: z.number().int(), amountCents: cents })),
 });
 export type RefundView = z.infer<typeof RefundViewSchema>;
 
@@ -735,3 +833,128 @@ export const DrawerViewSchema = z.object({
     .nullable(),
 });
 export type DrawerView = z.infer<typeof DrawerViewSchema>;
+
+export const CreateDrawerRequestSchema = z.object({
+  code: z
+    .string()
+    .trim()
+    .regex(/^[a-z0-9-]{2,32}$/),
+  name: z.string().trim().min(2).max(60),
+});
+
+/** A drawer as an administrator sees it, including retired ones. */
+export const DrawerAdminViewSchema = z.object({
+  id: uuid,
+  code: z.string(),
+  name: z.string(),
+  active: z.boolean(),
+  inUse: z.boolean(),
+});
+export type DrawerAdminView = z.infer<typeof DrawerAdminViewSchema>;
+
+// ---------------------------------------------------------------- business-day close
+
+export const CloseDayRequestSchema = z.object({
+  notes: z.string().trim().min(1).max(500).optional(),
+});
+
+export const DayCloseIssueSchema = z.object({ code: z.string(), message: z.string() });
+export type DayCloseIssue = z.infer<typeof DayCloseIssueSchema>;
+
+export const DayCloseTotalsSchema = z.object({
+  netSalesCents: cents,
+  gstCents: cents,
+  /** Cash actually collected, including rounding: what the drawers' expected cash uses. */
+  cashTakenCents: cents,
+  cardTakenCents: cents,
+  /** Net effect of cash rounding on revenue. */
+  cashRoundingCents: cents,
+  /** All refunds, by the amount owed to customers. */
+  refundsCents: cents,
+  /** Cash actually handed back, including rounding. */
+  cashRefundsCents: cents,
+  cogsCents: cents,
+  wasteCents: cents,
+  stockVarianceCents: cents,
+  /** Positive when drawers came up short. */
+  cashOverShortCents: cents,
+  pettyCashCents: cents,
+});
+export type DayCloseTotals = z.infer<typeof DayCloseTotalsSchema>;
+
+export const DayDrawerResultSchema = z.object({
+  sessionId: uuid,
+  drawerName: z.string(),
+  openedBy: z.string(),
+  status: z.enum(['open', 'pending_approval', 'closed']),
+  openingFloatCents: cents,
+  /** Null until the drawer is counted: an open drawer stays blind. */
+  expectedCents: cents.nullable(),
+  countedCents: cents.nullable(),
+  varianceCents: cents.nullable(),
+});
+export type DayDrawerResult = z.infer<typeof DayDrawerResultSchema>;
+
+export const DayCloseViewSchema = z.object({
+  businessDate: z.string(),
+  currentBusinessDate: z.string(),
+  status: z.enum(['open', 'closed']),
+  /** Anything here stops the day closing; the server enforces the same list. */
+  blockers: z.array(DayCloseIssueSchema),
+  warnings: z.array(DayCloseIssueSchema),
+  /** Live for an open day (managers see them at any time, R-028); as recorded for a closed one. */
+  totals: DayCloseTotalsSchema,
+  drawers: z.array(DayDrawerResultSchema),
+  closedBy: z.string().nullable(),
+  closedAt: z.string().nullable(),
+  notes: z.string().nullable(),
+});
+export type DayCloseView = z.infer<typeof DayCloseViewSchema>;
+
+// ---------------------------------------------------------------- food cost
+
+const foodCostFigures = {
+  netSalesCents: cents,
+  /**
+   * Cost of food produced (COGS): consumption at standard cost, dated by when it was made. It
+   * includes food later cancelled, comped or refunded, so it is not a recipe-to-price ratio.
+   */
+  cogsCents: cents,
+  wasteCents: cents,
+  /** Stock count shortfall; negative when a count found more than the books. */
+  stockVarianceCents: cents,
+  /** COGS + waste + stock count shortfall. */
+  actualFoodCostCents: cents,
+  /** Net sales less actual food cost. */
+  grossProfitCents: cents,
+  /** Shares of net sales in basis points, rounded half away from zero; null without positive sales. */
+  cogsBps: z.number().int().nullable(),
+  actualFoodCostBps: z.number().int().nullable(),
+  grossMarginBps: z.number().int().nullable(),
+};
+
+export const FoodCostReportSchema = z.object({
+  from: z.string(),
+  to: z.string(),
+  days: z.array(
+    z.object({
+      businessDate: z.string(),
+      /** Closed days are final; open ones can still change. */
+      closed: z.boolean(),
+      ...foodCostFigures,
+    }),
+  ),
+  /** Computed from the summed figures, not by averaging the days' percentages. */
+  totals: z.object(foodCostFigures),
+});
+export type FoodCostReport = z.infer<typeof FoodCostReportSchema>;
+
+/** An event the ledger gave up on after repeated failures. */
+export const FailedEventViewSchema = z.object({
+  eventId: uuid,
+  eventType: z.string(),
+  occurredAt: z.string(),
+  attempts: z.number().int(),
+  lastError: z.string(),
+});
+export type FailedEventView = z.infer<typeof FailedEventViewSchema>;

@@ -311,7 +311,8 @@ describe('refunds and payment reversal', () => {
   });
 
   it('the journal reconciles refunds for the day and the stock ledger is untouched', async () => {
-    await dispatcher.runOnce();
+    // One pass handles one batch; other files may have left events behind.
+    while ((await dispatcher.runOnce()).processed > 0);
     const { rows } = await sql<{
       d: string;
     }>`select app.business_date(${centralId}::uuid, now())::text as d`.execute(h.owner);
@@ -322,6 +323,17 @@ describe('refunds and payment reversal', () => {
     expect(rec.body.refundsCents).toBeGreaterThan(0);
     expect(rec.body).toMatchObject({ reconciled: true, pendingEvents: 0 });
     expect(rec.body.journalRefundsCents).toBe(rec.body.refundsCents);
+    // Each tender on its own (R-030). This file refunds both tenders; other files may add more.
+    const methods = await h.owner
+      .selectFrom('refunds')
+      .select('method')
+      .distinct()
+      .where('restaurant_id', '=', centralId)
+      .where(sql<boolean>`app.business_date(restaurant_id, created_at) = ${rows[0]!.d}::date`)
+      .execute();
+    expect(methods.map((m) => m.method).sort()).toEqual(['card', 'cash']);
+    expect(rec.body.journalCardClearingCents).toBe(rec.body.cardNetCents);
+    expect(rec.body.journalCashOnHandCents).toBe(rec.body.cashNetCents);
     expect(await reconciliationErrors(h)).toEqual([]);
   });
 });

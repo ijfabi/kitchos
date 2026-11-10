@@ -10,6 +10,7 @@ import {
   saleRecognitionPostings,
 } from '@kitchos/domain';
 import { sql } from 'kysely';
+import { InventoryValuationPoster } from './inventory-valuation.poster.ts';
 import { LedgerService } from './ledger.service.ts';
 
 export interface ConsumedEvent {
@@ -32,6 +33,8 @@ export interface EventConsumer {
  *   payment.captured -> payment receipt (deposit liability, cash rounding)
  *   order.completed  -> sale recognition (revenue, discounts, GST)
  *   payment.refunded -> refund (deposit returned, or sales return with GST share)
+ *   drawer.*         -> drawer float, movements and close (ADR-0015)
+ *   stock operations -> inventory valuation (InventoryValuationPoster, ADR-0016)
  */
 @Injectable()
 export class LedgerConsumer implements EventConsumer {
@@ -43,11 +46,16 @@ export class LedgerConsumer implements EventConsumer {
     'drawer.opened',
     'drawer.movement_recorded',
     'drawer.closed',
+    ...InventoryValuationPoster.eventTypes,
   ] as const;
 
-  constructor(@Inject(LedgerService) private readonly ledger: LedgerService) {}
+  constructor(
+    @Inject(LedgerService) private readonly ledger: LedgerService,
+    @Inject(InventoryValuationPoster) private readonly inventory: InventoryValuationPoster,
+  ) {}
 
   async handle(tx: Tx, event: ConsumedEvent): Promise<void> {
+    if (this.inventory.handles(event.eventType)) return this.inventory.handle(tx, event);
     if (event.eventType === 'payment.captured') return this.paymentCaptured(tx, event);
     if (event.eventType === 'order.completed') return this.orderCompleted(tx, event);
     if (event.eventType === 'payment.refunded') return this.paymentRefunded(tx, event);
@@ -148,6 +156,7 @@ export class LedgerConsumer implements EventConsumer {
         'f.amount_cents',
         'f.refunded_before_cents',
         'f.cash_rounding_cents',
+        'f.gst_cents',
         'f.created_at',
         'o.order_number',
         'o.total_cents',
@@ -175,6 +184,8 @@ export class LedgerConsumer implements EventConsumer {
         orderTaxCents: r.tax_cents,
         // Captured under the payment lock when the refund was made (not inferred from ids or clocks).
         previouslyRefundedCents: r.refunded_before_cents,
+        // Fixed when the refund was made (per item since Milestone 15); older refunds: computed.
+        gstCents: r.gst_cents,
       }),
     });
   }

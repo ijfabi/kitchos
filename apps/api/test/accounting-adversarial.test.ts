@@ -241,7 +241,10 @@ describe('ledger under adversarial conditions', () => {
         const pe = await entryRows(p!.id);
         expect(pe.map((e) => e.entry_type)).toEqual(['payment_receipt']);
         const oe = await entryRows(o.id);
-        expect(oe.map((e) => e.entry_type)).toEqual(i < 5 ? ['sale_recognition'] : []);
+        // Cola is consumed at acceptance, so every order also has one COGS entry (ADR-0016).
+        expect(oe.map((e) => e.entry_type).sort()).toEqual(
+          i < 5 ? ['cogs', 'sale_recognition'] : ['cogs'],
+        );
         if (i < 5) await assertSaleMatchesOrder(o.id);
       }
     } finally {

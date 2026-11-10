@@ -55,11 +55,12 @@ someone other than the cashier.
 
 ## Consequences
 
-- Restaurants need drawers before they can take cash. Drawers are seeded; there is no drawer
-  admin API yet.
+- Restaurants need drawers before they can take cash. Drawers are seeded, and managers can add and
+  retire them (ADR-0017).
 - A session that crosses midnight posts its float and close at the opening business date, while
   its sales post at their own dates. The total balances, but cash on hand per business date does
   not net to zero for such sessions (acceptable until shift and business-day close).
 - Approval is not idempotent: a retry after success returns 409 `INVALID_STATE_TRANSITION`, and
   the UI refetches.
-- A drawer count is not yet a shift or business-day close; those follow.
+- A drawer count is not a business-day close: see ADR-0017, which also adds the drawer row (taken
+  before the session) to the lock order when opening a session.

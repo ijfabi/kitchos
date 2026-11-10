@@ -12,7 +12,13 @@ export interface EntryInput {
     | 'refund'
     | 'drawer_float'
     | 'drawer_movement'
-    | 'drawer_close';
+    | 'drawer_close'
+    | 'cogs'
+    | 'waste'
+    | 'waste_reversal'
+    | 'goods_receipt'
+    | 'stock_count'
+    | 'opening_stock';
   sourceType: string;
   sourceId: string;
   sourceEventId: string | null;

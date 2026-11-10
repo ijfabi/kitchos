@@ -2,17 +2,20 @@ import { Inject, Injectable } from '@nestjs/common';
 import { withTenant, type Database, type Tx } from '@kitchos/database';
 import type {
   GoodsReceiptView,
+  PreparedItemView,
   StockCountView,
   WasteRecordView,
   WasteSummary,
 } from '@kitchos/contracts';
 import {
+  divRoundHalfUp,
   extendedCostCents,
   formatDecimalQty,
   parseDecimalQty,
   type SimpleMenuItemDef,
 } from '@kitchos/domain';
 import { sql } from 'kysely';
+import { createHash } from 'node:crypto';
 import type { Permission } from '../auth/permissions.ts';
 import { MenuRepository } from '../catalog/menu.repository.ts';
 import { appendEvents } from '../events/outbox.ts';
@@ -49,8 +52,17 @@ export type RecordWasteInput =
       notes?: string | undefined;
     };
 
-const WASTE_SOURCE = 'waste_record';
-const WASTE_REVERSAL_SOURCE = 'waste_reversal';
+export const WASTE_SOURCE = 'waste_record';
+export const WASTE_REVERSAL_SOURCE = 'waste_reversal';
+export const GOODS_RECEIPT_SOURCE = 'goods_receipt';
+export const STOCK_COUNT_SOURCE = 'stock_count';
+
+interface ConsumedValue {
+  consumedMilli: number;
+  consumedCents: number;
+  wastedMilli: number;
+  wastedCents: number;
+}
 
 interface WasteLinePlan {
   inventoryItemId: string;
@@ -80,204 +92,365 @@ export class StockOperationsService {
     idempotencyKey: string,
   ): Promise<IdempotentResult<WasteRecordView>> {
     return withTenant(this.db, { orgId: ctx.orgId }, (tx) =>
-      idempotent(tx, ctx.orgId, `waste:${ctx.restaurantId}`, idempotencyKey, input, async () => {
-        const locationId = await this.inventory.defaultLocationId(tx, ctx.restaurantId);
-        if (input.stationId) await this.requireStation(tx, ctx.restaurantId, input.stationId);
-
-        let plan: WasteLinePlan[];
-        let productId: string | null = null;
-        let orderLineId: string | null = null;
-        let quantity: string;
-        let remakeMilliPerItem: { inventoryItemId: string; quantityMilli: number }[] = [];
-
-        if (input.kind === 'raw_ingredient') {
-          await this.requireItem(tx, input.inventoryItemId);
-          quantity = formatDecimalQty(parseDecimalQty(input.quantity));
-          plan = [
-            {
-              inventoryItemId: input.inventoryItemId,
-              quantityMilli: parseDecimalQty(input.quantity),
-              treatment: 'deducted_now',
-            },
-          ];
-        } else if (input.orderLineId) {
-          const line = await tx
-            .selectFrom('order_lines as l')
-            .innerJoin('orders as o', 'o.id', 'l.order_id')
-            .select(['l.id', 'l.product_id', 'l.quantity', 'l.kind'])
-            .where('l.id', '=', input.orderLineId)
-            .where('o.restaurant_id', '=', ctx.restaurantId)
-            .executeTakeFirst();
-          if (!line || line.kind === 'combo') throw notFound('Order line');
-          if (input.quantity > line.quantity) {
-            throw new ApiException(
-              422,
-              'WASTE_QUANTITY_EXCEEDS_LINE',
-              `Line has only ${line.quantity} item(s)`,
-            );
-          }
-          const snapshot = await tx
-            .selectFrom('order_line_ingredients')
-            .select(['inventory_item_id', 'quantity'])
-            .where('order_line_id', '=', line.id)
-            .execute();
-          const consumed = (await this.inventory.lineWasConsumed(tx, [line.id])).has(line.id);
-          const portion = snapshot.map((s) => {
-            const total = parseDecimalQty(s.quantity);
-            if (total % line.quantity !== 0)
-              throw new Error(`Snapshot for ${line.id} is not divisible by quantity`);
-            return {
-              inventoryItemId: s.inventory_item_id,
-              quantityMilli: (total / line.quantity) * input.quantity,
-            };
-          });
-          // Invariant 12: if the line's ingredients were already consumed in
-          // production, the waste is a classification only — no second deduction.
-          plan = portion.map((p) => ({
-            ...p,
-            treatment: consumed ? 'already_consumed' : 'deducted_now',
-          }));
-          productId = line.product_id;
-          orderLineId = line.id;
-          quantity = String(input.quantity);
-          // A remake of an already-consumed line needs a fresh portion; an
-          // unconsumed line will consume normally when its task progresses.
-          if (input.remake && consumed) remakeMilliPerItem = portion;
-        } else {
-          const menu = await this.menus.loadMenu(tx, ctx.restaurantId);
-          const item = menu.catalog.items.get(input.menuItemId!);
-          if (!item) throw notFound('Menu item');
-          if (item.kind !== 'item') {
-            throw new ApiException(
-              422,
-              'WASTE_COMBO_NOT_ALLOWED',
-              'Record waste for each meal component separately',
-            );
-          }
-          plan = (item as SimpleMenuItemDef).recipe.ingredients.map((i) => ({
-            inventoryItemId: i.inventoryItemId,
-            quantityMilli: i.quantityMilli * input.quantity,
-            treatment: 'deducted_now' as const,
-          }));
-          productId = item.productId;
-          quantity = String(input.quantity);
-        }
-
-        const costs = await this.unitCosts(
-          tx,
-          plan.map((p) => p.inventoryItemId),
-        );
-        const lines = plan.map((p) => ({
-          ...p,
-          unitCost: costs.get(p.inventoryItemId) ?? '0',
-          costCents: extendedCostCents(p.quantityMilli, costs.get(p.inventoryItemId) ?? '0'),
-        }));
-        const costCents = lines.reduce((s, l) => s + l.costCents, 0);
-        const threshold = await tx
-          .selectFrom('restaurants')
-          .select('waste_approval_threshold_cents')
-          .where('id', '=', ctx.restaurantId)
-          .executeTakeFirstOrThrow();
-        const status =
-          costCents > threshold.waste_approval_threshold_cents ? 'pending_approval' : 'recorded';
-
-        const record = await tx
-          .insertInto('waste_records')
-          .values({
-            org_id: ctx.orgId,
-            restaurant_id: ctx.restaurantId,
-            location_id: locationId,
-            kind: input.kind,
-            inventory_item_id: input.kind === 'raw_ingredient' ? input.inventoryItemId : null,
-            product_id: productId,
-            order_line_id: orderLineId,
-            quantity,
-            reason: input.reason,
-            remake: input.kind === 'prepared_item' && input.remake,
-            station_id: input.stationId ?? null,
-            recorded_by: ctx.userId,
-            notes: input.notes ?? null,
-            cost_cents: costCents,
-            status,
-            business_date: sql<string>`app.business_date(${ctx.restaurantId}::uuid, now())`,
-          })
-          .returning(['id', 'version'])
-          .executeTakeFirstOrThrow();
-        await tx
-          .insertInto('waste_record_lines')
-          .values(
-            lines.map((l) => ({
-              org_id: ctx.orgId,
-              waste_record_id: record.id,
-              inventory_item_id: l.inventoryItemId,
-              quantity: formatDecimalQty(l.quantityMilli),
-              treatment: l.treatment,
-              unit_cost: l.unitCost,
-              cost_cents: l.costCents,
-            })),
-          )
-          .execute();
-
-        const movements: MovementInput[] = lines
-          .filter((l) => l.treatment === 'deducted_now')
-          .map((l) => ({
-            inventoryItemId: l.inventoryItemId,
-            movementType: input.kind === 'raw_ingredient' ? 'waste_raw' : 'waste_prepared',
-            quantityMilli: -l.quantityMilli,
-            sourceType: WASTE_SOURCE,
-            sourceId: record.id,
-          }));
-        for (const r of remakeMilliPerItem) {
-          movements.push({
-            inventoryItemId: r.inventoryItemId,
-            movementType: 'production_consumption',
-            quantityMilli: -r.quantityMilli,
-            sourceType: ORDER_LINE_SOURCE,
-            sourceId: orderLineId!,
-            sourceKey: `remake:${record.id}`,
-          });
-        }
-        await this.inventory.recordMovements(tx, {
-          orgId: ctx.orgId,
-          restaurantId: ctx.restaurantId,
-          locationId,
-          actor: { userId: ctx.userId },
-          notes: input.notes ?? null,
-          movements,
-        });
-
-        await audit(tx, {
-          orgId: ctx.orgId,
-          restaurantId: ctx.restaurantId,
-          actorUserId: ctx.userId,
-          action: 'waste.record',
-          entityType: 'waste_record',
-          entityId: record.id,
-          reason: input.reason,
-          data: { costCents, status, kind: input.kind, remake: remakeMilliPerItem.length > 0 },
-        });
-        await appendEvents(tx, [
-          {
-            orgId: ctx.orgId,
-            restaurantId: ctx.restaurantId,
-            aggregateType: 'stock',
-            aggregateId: record.id,
-            aggregateVersion: record.version,
-            eventType: 'inventory.waste_recorded',
-            payload: {
-              kind: input.kind,
-              reason: input.reason,
-              costCents,
-              status,
-              reclassifiedCostCents: lines
-                .filter((l) => l.treatment === 'already_consumed')
-                .reduce((s, l) => s + l.costCents, 0),
-            },
-          },
-        ]);
-        return { status: 201, body: await this.wasteView(tx, record.id) };
-      }),
+      idempotent(tx, ctx.orgId, `waste:${ctx.restaurantId}`, idempotencyKey, input, async () => ({
+        status: 201,
+        body: await this.recordWasteIn(tx, ctx, input),
+      })),
     );
+  }
+
+  /**
+   * Records waste inside the caller's transaction. Order-line waste takes the
+   * order's lock, which a caller such as a cancellation may already hold.
+   * Appends its event last, so the caller appends its own after this.
+   */
+  async recordWasteIn(
+    tx: Tx,
+    ctx: OperationContext,
+    input: RecordWasteInput,
+  ): Promise<WasteRecordView> {
+    const locationId = await this.inventory.defaultLocationId(tx, ctx.restaurantId);
+    if (input.stationId) await this.requireStation(tx, ctx.restaurantId, input.stationId);
+
+    let plan: WasteLinePlan[];
+    let productId: string | null = null;
+    let orderLineId: string | null = null;
+    let quantity: string;
+    let remakeMilliPerItem: { inventoryItemId: string; quantityMilli: number }[] = [];
+    let consumedValues = new Map<string, ConsumedValue>();
+
+    if (input.kind === 'raw_ingredient') {
+      await this.requireItem(tx, input.inventoryItemId);
+      quantity = formatDecimalQty(parseDecimalQty(input.quantity));
+      plan = [
+        {
+          inventoryItemId: input.inventoryItemId,
+          quantityMilli: parseDecimalQty(input.quantity),
+          treatment: 'deducted_now',
+        },
+      ];
+    } else if (input.orderLineId) {
+      const line = await tx
+        .selectFrom('order_lines as l')
+        .innerJoin('orders as o', 'o.id', 'l.order_id')
+        .select(['l.id', 'l.order_id', 'l.product_id', 'l.quantity', 'l.kind'])
+        .where('l.id', '=', input.orderLineId)
+        .where('o.restaurant_id', '=', ctx.restaurantId)
+        .executeTakeFirst();
+      if (!line || line.kind === 'combo') throw notFound('Order line');
+      // Serialises waste of a line with itself and with its consumption (lock order: order first).
+      await tx
+        .selectFrom('orders')
+        .select('id')
+        .where('id', '=', line.order_id)
+        .forUpdate()
+        .executeTakeFirstOrThrow();
+      const snapshot = await tx
+        .selectFrom('order_line_ingredients')
+        .select(['inventory_item_id', 'quantity'])
+        .where('order_line_id', '=', line.id)
+        .execute();
+      const consumed = (await this.inventory.lineWasConsumed(tx, [line.id])).has(line.id);
+      // Before consumption a line can only lose its own quantity; after it, remakes add portions.
+      if (!consumed && input.quantity > line.quantity) {
+        throw new ApiException(
+          422,
+          'WASTE_QUANTITY_EXCEEDS_LINE',
+          `Line has only ${line.quantity} item(s)`,
+        );
+      }
+      if (consumed) consumedValues = await this.consumedValues(tx, line.id);
+      const remaining = await this.wastableOnLine(tx, line.id, line.quantity, consumed);
+      if (input.quantity > remaining) {
+        throw new ApiException(
+          422,
+          'WASTE_QUANTITY_EXCEEDS_LINE',
+          remaining === 0
+            ? 'All of this item has already been recorded as waste'
+            : `Only ${remaining} of this item can still be recorded as waste`,
+        );
+      }
+      const portion = snapshot.map((s) => {
+        const total = parseDecimalQty(s.quantity);
+        if (total % line.quantity !== 0)
+          throw new Error(`Snapshot for ${line.id} is not divisible by quantity`);
+        return {
+          inventoryItemId: s.inventory_item_id,
+          quantityMilli: (total / line.quantity) * input.quantity,
+        };
+      });
+      // Invariant 12: if the line's ingredients were already consumed in
+      // production, the waste is a classification only — no second deduction.
+      plan = portion.map((p) => ({
+        ...p,
+        treatment: consumed ? 'already_consumed' : 'deducted_now',
+      }));
+      productId = line.product_id;
+      orderLineId = line.id;
+      quantity = String(input.quantity);
+      // A remake of an already-consumed line needs a fresh portion; an
+      // unconsumed line will consume normally when its task progresses.
+      if (input.remake && consumed) remakeMilliPerItem = portion;
+    } else {
+      const menu = await this.menus.loadMenu(tx, ctx.restaurantId);
+      const item = menu.catalog.items.get(input.menuItemId!);
+      if (!item) throw notFound('Menu item');
+      if (item.kind !== 'item') {
+        throw new ApiException(
+          422,
+          'WASTE_COMBO_NOT_ALLOWED',
+          'Record waste for each meal component separately',
+        );
+      }
+      plan = (item as SimpleMenuItemDef).recipe.ingredients.map((i) => ({
+        inventoryItemId: i.inventoryItemId,
+        quantityMilli: i.quantityMilli * input.quantity,
+        treatment: 'deducted_now' as const,
+      }));
+      productId = item.productId;
+      quantity = String(input.quantity);
+    }
+
+    if (plan.length === 0) {
+      throw new ApiException(422, 'WASTE_NO_INGREDIENTS', 'This item has no recipe ingredients');
+    }
+    const costs = await this.unitCosts(
+      tx,
+      plan.map((p) => p.inventoryItemId),
+    );
+    const lines = plan.map((p) => {
+      const unitCost = costs.get(p.inventoryItemId) ?? '0';
+      const v =
+        p.treatment === 'already_consumed' ? consumedValues.get(p.inventoryItemId) : undefined;
+      // Already consumed: its share of what the line's consumption (remakes included) was valued
+      // at, and the last portion takes exactly what is left, so the line's COGS nets to zero.
+      const costCents = v
+        ? v.wastedMilli + p.quantityMilli >= v.consumedMilli
+          ? v.consumedCents - v.wastedCents
+          : Number(
+              divRoundHalfUp(
+                BigInt(p.quantityMilli) * BigInt(v.consumedCents),
+                BigInt(v.consumedMilli),
+              ),
+            )
+        : extendedCostCents(p.quantityMilli, unitCost);
+      return { ...p, unitCost, costCents };
+    });
+    const costCents = lines.reduce((s, l) => s + l.costCents, 0);
+    const threshold = await tx
+      .selectFrom('restaurants')
+      .select('waste_approval_threshold_cents')
+      .where('id', '=', ctx.restaurantId)
+      .executeTakeFirstOrThrow();
+    const status =
+      costCents > threshold.waste_approval_threshold_cents ? 'pending_approval' : 'recorded';
+
+    const record = await tx
+      .insertInto('waste_records')
+      .values({
+        org_id: ctx.orgId,
+        restaurant_id: ctx.restaurantId,
+        location_id: locationId,
+        kind: input.kind,
+        inventory_item_id: input.kind === 'raw_ingredient' ? input.inventoryItemId : null,
+        product_id: productId,
+        order_line_id: orderLineId,
+        quantity,
+        reason: input.reason,
+        // Only when a fresh portion was actually consumed for it.
+        remake: remakeMilliPerItem.length > 0,
+        station_id: input.stationId ?? null,
+        recorded_by: ctx.userId,
+        notes: input.notes ?? null,
+        cost_cents: costCents,
+        status,
+        business_date: sql<string>`app.business_date(${ctx.restaurantId}::uuid, now())`,
+      })
+      .returning(['id', 'version'])
+      .executeTakeFirstOrThrow();
+    await tx
+      .insertInto('waste_record_lines')
+      .values(
+        lines.map((l) => ({
+          org_id: ctx.orgId,
+          waste_record_id: record.id,
+          inventory_item_id: l.inventoryItemId,
+          quantity: formatDecimalQty(l.quantityMilli),
+          treatment: l.treatment,
+          unit_cost: l.unitCost,
+          cost_cents: l.costCents,
+        })),
+      )
+      .execute();
+
+    const movements: MovementInput[] = lines
+      .filter((l) => l.treatment === 'deducted_now')
+      .map((l) => ({
+        inventoryItemId: l.inventoryItemId,
+        movementType: input.kind === 'raw_ingredient' ? 'waste_raw' : 'waste_prepared',
+        quantityMilli: -l.quantityMilli,
+        sourceType: WASTE_SOURCE,
+        sourceId: record.id,
+      }));
+    for (const r of remakeMilliPerItem) {
+      movements.push({
+        inventoryItemId: r.inventoryItemId,
+        movementType: 'production_consumption',
+        quantityMilli: -r.quantityMilli,
+        sourceType: ORDER_LINE_SOURCE,
+        sourceId: orderLineId!,
+        sourceKey: `remake:${record.id}`,
+      });
+    }
+    await this.inventory.recordMovements(tx, {
+      orgId: ctx.orgId,
+      restaurantId: ctx.restaurantId,
+      locationId,
+      actor: { userId: ctx.userId },
+      notes: input.notes ?? null,
+      movements,
+    });
+
+    await audit(tx, {
+      orgId: ctx.orgId,
+      restaurantId: ctx.restaurantId,
+      actorUserId: ctx.userId,
+      action: 'waste.record',
+      entityType: 'waste_record',
+      entityId: record.id,
+      reason: input.reason,
+      data: { costCents, status, kind: input.kind, remake: remakeMilliPerItem.length > 0 },
+    });
+    await appendEvents(tx, [
+      {
+        orgId: ctx.orgId,
+        restaurantId: ctx.restaurantId,
+        aggregateType: 'stock',
+        aggregateId: record.id,
+        aggregateVersion: record.version,
+        eventType: 'inventory.waste_recorded',
+        payload: {
+          kind: input.kind,
+          reason: input.reason,
+          costCents,
+          status,
+          reclassifiedCostCents: lines
+            .filter((l) => l.treatment === 'already_consumed')
+            .reduce((s, l) => s + l.costCents, 0),
+        },
+      },
+    ]);
+    return this.wasteView(tx, record.id);
+  }
+
+  /** Identifies a prepared list: it changes when anything is prepared or wasted. */
+  preparedVersion(items: readonly PreparedItemView[]): string {
+    const text = items.map((i) => `${i.orderLineId}:${i.remaining}`).join(',');
+    return createHash('sha256').update(text).digest('hex').slice(0, 16);
+  }
+
+  /** An order's prepared (consumed) lines and the portions of each still free to record as waste. */
+  async preparedLines(tx: Tx, orderId: string): Promise<PreparedItemView[]> {
+    const lines = await tx
+      .selectFrom('order_lines')
+      .select(['id', 'name', 'quantity'])
+      .where('order_id', '=', orderId)
+      .where('kind', '<>', 'combo') // a meal's components carry its recipes
+      .orderBy('id')
+      .execute();
+    const consumed = await this.inventory.lineWasConsumed(
+      tx,
+      lines.map((l) => l.id),
+    );
+    const out: PreparedItemView[] = [];
+    for (const l of lines.filter((x) => consumed.has(x.id))) {
+      out.push({
+        orderLineId: l.id,
+        name: l.name,
+        quantity: l.quantity,
+        remaining: await this.wastableOnLine(tx, l.id, l.quantity, true),
+      });
+    }
+    return out;
+  }
+
+  /**
+   * Records an order's prepared food as waste, for a cancellation or refund. With a
+   * list, each prepared line takes its listed portions (unlisted: none); without one,
+   * the default: all that remain, or none. Listed lines must be prepared lines of this order, within what remains.
+   * Runs inside the caller's transaction, which holds the order lock.
+   */
+  async wastePreparedFood(
+    tx: Tx,
+    ctx: OperationContext,
+    args: {
+      orderId: string;
+      defaultAll: boolean;
+      overrides?: readonly { orderLineId: string; quantity: number }[] | undefined;
+      reason: RecordWasteInput['reason'];
+      notes: string;
+      /** The version of the prepared list the person saw; refused if it has changed since. */
+      preparedVersion?: string | undefined;
+    },
+  ): Promise<string[]> {
+    const lines = await this.preparedLines(tx, args.orderId);
+    if (args.preparedVersion && args.preparedVersion !== this.preparedVersion(lines)) {
+      throw new ApiException(
+        409,
+        'PREPARED_ITEMS_CHANGED',
+        'The kitchen has prepared or wasted food on this order since you looked: check the counts',
+      );
+    }
+    const byId = new Map(lines.map((l) => [l.orderLineId, l]));
+    for (const o of args.overrides ?? []) {
+      const line = byId.get(o.orderLineId);
+      if (!line) {
+        throw new ApiException(
+          422,
+          'WASTE_LINE_NOT_PREPARED',
+          'Only food already prepared for this order can be recorded as waste',
+        );
+      }
+      if (o.quantity > line.remaining) {
+        throw new ApiException(
+          422,
+          'WASTE_QUANTITY_EXCEEDS_LINE',
+          `Only ${line.remaining} of ${line.name} can still be recorded as waste`,
+        );
+      }
+    }
+    const wanted = new Map(args.overrides?.map((o) => [o.orderLineId, o.quantity]) ?? []);
+    const ids: string[] = [];
+    for (const line of lines) {
+      // A list, when given, is the whole answer; without one, the default applies.
+      const quantity = args.overrides
+        ? (wanted.get(line.orderLineId) ?? 0)
+        : args.defaultAll
+          ? line.remaining
+          : 0;
+      if (quantity === 0) continue;
+      const w = await this.recordWasteIn(tx, ctx, {
+        kind: 'prepared_item',
+        orderLineId: line.orderLineId,
+        quantity,
+        remake: false,
+        reason: args.reason,
+        notes: args.notes.slice(0, 1000),
+      });
+      ids.push(w.id);
+    }
+    return ids;
+  }
+
+  /** Portions of an order line still free to record as waste. The caller holds the order lock. */
+  async remainingOnLine(tx: Tx, orderLineId: string): Promise<number> {
+    const line = await tx
+      .selectFrom('order_lines')
+      .select('quantity')
+      .where('id', '=', orderLineId)
+      .executeTakeFirstOrThrow();
+    const consumed = (await this.inventory.lineWasConsumed(tx, [orderLineId])).has(orderLineId);
+    return this.wastableOnLine(tx, orderLineId, line.quantity, consumed);
   }
 
   /**
@@ -372,7 +545,7 @@ export class StockOperationsService {
 
   async listWaste(
     ctx: { orgId: string; restaurantId: string },
-    filter: { status?: string | undefined; limit: number },
+    filter: { status?: string | undefined; recordedBy?: string; limit: number },
   ): Promise<WasteRecordView[]> {
     return withTenant(this.db, ctx, async (tx) => {
       let q = tx
@@ -383,6 +556,7 @@ export class StockOperationsService {
         .orderBy('id', 'desc')
         .limit(filter.limit);
       if (filter.status) q = q.where('status', '=', filter.status);
+      if (filter.recordedBy) q = q.where('recorded_by', '=', filter.recordedBy);
       const ids = await q.execute();
       const out: WasteRecordView[] = [];
       for (const { id } of ids) out.push(await this.wasteView(tx, id));
@@ -535,9 +709,18 @@ export class StockOperationsService {
             inventoryItemId: l.inventoryItemId,
             movementType: 'receipt',
             quantityMilli: parseDecimalQty(l.quantity),
-            sourceType: 'goods_receipt',
+            sourceType: GOODS_RECEIPT_SOURCE,
             sourceId: receipt.id,
           })),
+        });
+        await audit(tx, {
+          orgId: ctx.orgId,
+          restaurantId: ctx.restaurantId,
+          actorUserId: ctx.userId,
+          action: 'inventory.receive',
+          entityType: 'goods_receipt',
+          entityId: receipt.id,
+          data: { lines: input.lines.length, supplierName: input.supplierName ?? null },
         });
         await appendEvents(tx, [
           {
@@ -655,7 +838,7 @@ export class StockOperationsService {
             inventoryItemId: l.inventoryItemId,
             movementType: 'count_adjustment',
             quantityMilli: l.variance,
-            sourceType: 'stock_count',
+            sourceType: STOCK_COUNT_SOURCE,
             sourceId: count.id,
           })),
         });
@@ -690,6 +873,54 @@ export class StockOperationsService {
 
   // ----------------------------------------------------------------- helpers
 
+  /**
+   * Portions of an order line that can still be recorded as waste. Once consumed,
+   * that is what production used: the line's quantity plus any remakes, which
+   * stand even if the waste record that caused them was rejected. Before then, a
+   * line can only lose its own quantity. Rejected records give their quantity
+   * back. The caller holds the order lock.
+   */
+  private async wastableOnLine(
+    tx: Tx,
+    orderLineId: string,
+    lineQuantity: number,
+    consumed: boolean,
+  ): Promise<number> {
+    const records = await tx
+      .selectFrom('waste_records as w')
+      .select(['w.quantity', 'w.status'])
+      .select((eb) => [
+        eb
+          .exists(
+            eb
+              .selectFrom('waste_record_lines as l')
+              .select('l.waste_record_id')
+              .whereRef('l.waste_record_id', '=', 'w.id')
+              .where('l.treatment', '=', consumed ? 'already_consumed' : 'deducted_now'),
+          )
+          .as('same_treatment'),
+        eb
+          .exists(
+            eb
+              .selectFrom('stock_movements as m')
+              .select('m.id')
+              .where('m.source_type', '=', ORDER_LINE_SOURCE)
+              .where('m.source_id', '=', orderLineId)
+              .where(sql<boolean>`m.source_key = 'remake:' || w.id::text`),
+          )
+          .as('remade'),
+      ])
+      .where('w.order_line_id', '=', orderLineId)
+      .execute();
+    // Prepared-item waste is in whole portions (CHECK on waste_records).
+    const portions = (r: { quantity: string }) => parseDecimalQty(r.quantity) / 1000;
+    const remade = records.filter((r) => r.remade).reduce((s, r) => s + portions(r), 0);
+    const wasted = records
+      .filter((r) => r.same_treatment && r.status !== 'rejected')
+      .reduce((s, r) => s + portions(r), 0);
+    return Math.max(0, lineQuantity + (consumed ? remade : 0) - wasted);
+  }
+
   private async requireItem(tx: Tx, id: string): Promise<void> {
     const found = await tx
       .selectFrom('inventory_items')
@@ -707,6 +938,52 @@ export class StockOperationsService {
       .where('restaurant_id', '=', restaurantId)
       .executeTakeFirst();
     if (!found) throw notFound('Station');
+  }
+
+  /**
+   * Per ingredient of a consumed line: what its consumption (remakes included) was valued at,
+   * and how much of it earlier waste (not rejected) already moved out of COGS. Lines consumed
+   * before valuation existed have no value and fall back to standard cost.
+   */
+  private async consumedValues(tx: Tx, orderLineId: string): Promise<Map<string, ConsumedValue>> {
+    const consumed = await tx
+      .selectFrom('stock_movements')
+      .select([
+        'inventory_item_id',
+        sql<string>`sum(-quantity_delta)::text`.as('qty'),
+        sql<string | null>`(-sum(value_cents))::text`.as('cents'),
+        sql<boolean>`bool_and(value_cents is not null)`.as('valued'),
+      ])
+      .where('source_type', '=', ORDER_LINE_SOURCE)
+      .where('source_id', '=', orderLineId)
+      .where('movement_type', '=', 'production_consumption')
+      .groupBy('inventory_item_id')
+      .execute();
+    const wasted = await tx
+      .selectFrom('waste_record_lines as l')
+      .innerJoin('waste_records as w', 'w.id', 'l.waste_record_id')
+      .select([
+        'l.inventory_item_id',
+        sql<string>`sum(l.quantity)::text`.as('qty'),
+        sql<string>`sum(l.cost_cents)::text`.as('cents'),
+      ])
+      .where('w.order_line_id', '=', orderLineId)
+      .where('w.status', '<>', 'rejected')
+      .where('l.treatment', '=', 'already_consumed')
+      .groupBy('l.inventory_item_id')
+      .execute();
+    const out = new Map<string, ConsumedValue>();
+    for (const c of consumed) {
+      if (!c.valued || c.cents === null) continue;
+      const w = wasted.find((x) => x.inventory_item_id === c.inventory_item_id);
+      out.set(c.inventory_item_id, {
+        consumedMilli: parseDecimalQty(c.qty),
+        consumedCents: Number(c.cents),
+        wastedMilli: w ? parseDecimalQty(w.qty) : 0,
+        wastedCents: w ? Number(w.cents) : 0,
+      });
+    }
+    return out;
   }
 
   private async unitCosts(tx: Tx, ids: readonly string[]): Promise<Map<string, string>> {
@@ -748,6 +1025,7 @@ export class StockOperationsService {
         'w.review_reason',
         'w.business_date',
         'w.occurred_at',
+        'w.recorded_by as recorded_by_id',
         'u.display_name as recorded_by',
         'rv.display_name as reviewed_by',
         's.name as station_name',
@@ -773,6 +1051,7 @@ export class StockOperationsService {
       costCents: w.cost_cents,
       status: w.status as WasteRecordView['status'],
       recordedBy: w.recorded_by,
+      recordedById: w.recorded_by_id,
       reviewedBy: w.reviewed_by,
       reviewReason: w.review_reason,
       stationName: w.station_name,

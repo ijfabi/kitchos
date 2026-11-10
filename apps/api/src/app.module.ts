@@ -3,8 +3,13 @@ import type { Database } from '@kitchos/database';
 import type pg from 'pg';
 import type { Logger } from 'pino';
 import { AccountingController } from './accounting/accounting.controller.ts';
+import { DayCloseController, FailedEventsController } from './accounting/day-close.controller.ts';
+import { DayCloseService } from './accounting/day-close.service.ts';
+import { FoodCostController } from './accounting/food-cost.controller.ts';
+import { ReconciliationService } from './accounting/reconciliation.service.ts';
 import { CashDrawerService } from './cash/cash-drawer.service.ts';
 import { CashController } from './cash/cash.controller.ts';
+import { InventoryValuationPoster } from './accounting/inventory-valuation.poster.ts';
 import { LedgerConsumer } from './accounting/ledger.consumer.ts';
 import { LedgerService } from './accounting/ledger.service.ts';
 import { AuthController } from './auth/auth.controller.ts';
@@ -61,6 +66,9 @@ export class AppModule {
         StockOperationsController,
         LiveEventsController,
         AccountingController,
+        DayCloseController,
+        FailedEventsController,
+        FoodCostController,
         CashController,
       ],
       providers: [
@@ -80,7 +88,10 @@ export class AppModule {
         RefundsService,
         LiveEventsService,
         LedgerService,
+        InventoryValuationPoster,
         LedgerConsumer,
+        ReconciliationService,
+        DayCloseService,
         EventDispatcher,
         CashDrawerService,
       ],

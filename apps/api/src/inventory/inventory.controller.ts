@@ -1,6 +1,6 @@
 import { Controller, Get, Inject, Param, Query, UseGuards } from '@nestjs/common';
 import { withTenant, type Database } from '@kitchos/database';
-import type { StockBalanceView, StockMovementView } from '@kitchos/contracts';
+import type { StockBalanceView, StockMovementView, WasteItemView } from '@kitchos/contracts';
 import { formatDecimalQty, parseDecimalQty } from '@kitchos/domain';
 import { z } from 'zod';
 import { Principal, RequirePermission, StaffAuthGuard } from '../auth/auth.guard.ts';
@@ -46,6 +46,34 @@ export class InventoryController {
       onHand: r.on_hand,
       reserved: r.reserved,
       available: formatDecimalQty(parseDecimalQty(r.on_hand) - parseDecimalQty(r.reserved)),
+    }));
+  }
+
+  /** Crew record waste without `inventory.view`, so this carries no quantities. */
+  @Get('waste-items')
+  @RequirePermission('waste.record')
+  async wasteItems(
+    @Param('restaurantId', UuidParam) restaurantId: string,
+    @Principal() p: StaffPrincipal,
+  ): Promise<WasteItemView[]> {
+    const rows = await withTenant(this.db, p, (tx) =>
+      tx
+        .selectFrom('stock_balances as b')
+        .innerJoin('stock_locations as l', 'l.id', 'b.location_id')
+        .innerJoin('inventory_items as i', 'i.id', 'b.inventory_item_id')
+        .select(['i.id', 'i.sku', 'i.name', 'i.base_unit', 'i.category'])
+        .where('l.restaurant_id', '=', restaurantId)
+        .where('l.is_default', '=', true)
+        .orderBy('i.category')
+        .orderBy('i.name')
+        .execute(),
+    );
+    return rows.map((r) => ({
+      inventoryItemId: r.id,
+      sku: r.sku,
+      name: r.name,
+      baseUnit: r.base_unit,
+      category: r.category,
     }));
   }
 

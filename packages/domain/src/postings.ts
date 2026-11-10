@@ -1,5 +1,5 @@
 import { DomainError } from './errors.ts';
-import { assertCents, cents, divRoundHalfUp, inclusiveTax, type Cents } from './money.ts';
+import { assertCents, cents, divRoundHalfUp, inclusiveTax, type Cents, allocate } from './money.ts';
 
 /** Accounts referenced by posting rules (resolved per tenant via accounts.system_key). */
 export type SystemAccount =
@@ -13,7 +13,13 @@ export type SystemAccount =
   | 'cash_rounding'
   | 'cash_in_safe'
   | 'cash_over_short'
-  | 'petty_cash';
+  | 'petty_cash'
+  | 'inventory'
+  | 'cogs'
+  | 'waste_expense'
+  | 'stock_variance'
+  | 'goods_received_not_invoiced'
+  | 'opening_balance_equity';
 
 export interface Posting {
   readonly account: SystemAccount;
@@ -155,6 +161,8 @@ export interface RefundFacts {
   readonly orderTaxCents: number;
   /** Amount already refunded on this order before this refund. */
   readonly previouslyRefundedCents: number;
+  /** The GST in this refund when fixed at refund time (per item); otherwise a share is computed. */
+  readonly gstCents?: number | null | undefined;
 }
 
 /**
@@ -172,6 +180,20 @@ export function refundGstShare(
   const share = (refunded: number) =>
     Number(divRoundHalfUp(BigInt(refunded) * BigInt(f.orderTaxCents), BigInt(f.orderTotalCents)));
   return cents(share(f.previouslyRefundedCents + f.amountCents) - share(f.previouslyRefundedCents));
+}
+
+/**
+ * The order's GST spread over its lines: taxable lines in proportion to their net amount, exact to
+ * the cent (largest remainder), GST-free lines none. Refunding a whole line returns exactly this.
+ */
+export function lineGstCents(
+  orderTaxCents: number,
+  lines: readonly { netCents: number; taxable: boolean }[],
+): number[] {
+  assertCents(orderTaxCents);
+  const weights = lines.map((l) => (l.taxable ? Math.max(l.netCents, 0) : 0));
+  if (orderTaxCents === 0 || weights.every((w) => w === 0)) return lines.map(() => 0);
+  return allocate(orderTaxCents, weights);
 }
 
 /**
@@ -202,7 +224,11 @@ export function refundPostings(f: RefundFacts): Posting[] {
   if (f.treatment === 'deposit_release') {
     other = [debit('customer_deposits', f.amountCents, 'Deposit returned')];
   } else {
-    const gst = refundGstShare(f);
+    const gst = f.gstCents ?? refundGstShare(f);
+    assertCents(gst);
+    if (gst < 0 || gst > f.amountCents) {
+      throw new DomainError('AMOUNT_OUT_OF_RANGE', 'Refund GST must be within the refund');
+    }
     other = [
       debit('sales_returns', f.amountCents - gst, 'Sales return (ex GST)'),
       debit('gst_payable', gst, 'GST on return'),

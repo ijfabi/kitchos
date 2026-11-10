@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import type { Tx } from '@kitchos/database';
 import { DomainError, formatDecimalQty, parseDecimalQty } from '@kitchos/domain';
 import { sql } from 'kysely';
+import { ApiException } from '../infra/http-errors.ts';
 
 export interface LineRequirement {
   orderLineId: string;
@@ -32,6 +33,9 @@ export interface MovementInput {
   sourceId: string;
   sourceKey?: string;
 }
+
+/** 8 * 10^12 base units: inside the safe-integer range of milli-units, with room for reservations. */
+const MAX_ON_HAND_MILLI = 8_000_000_000_000_000n;
 
 const byId = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
@@ -206,6 +210,7 @@ export class InventoryService {
       args.locationId,
       movements.map((m) => m.inventoryItemId),
     );
+    await this.assertWithinRange(tx, args.locationId, movements);
     return tx
       .insertInto('stock_movements')
       .values(
@@ -231,6 +236,47 @@ export class InventoryService {
       .onConflict((oc) => oc.constraint('stock_movements_source_unique').doNothing())
       .returning(['id', 'inventory_item_id'])
       .execute();
+  }
+
+  /**
+   * Balances are read back as safe-integer milli-units, so one that drifted past
+   * that range would break every stock screen and count. Movements that would
+   * take a balance further out of range are refused; ones bringing it back are not.
+   * Exact bigint arithmetic: the stored value may itself be out of the safe range.
+   */
+  private async assertWithinRange(
+    tx: Tx,
+    locationId: string,
+    movements: readonly MovementInput[],
+  ): Promise<void> {
+    const deltas = new Map<string, bigint>();
+    for (const m of movements) {
+      deltas.set(
+        m.inventoryItemId,
+        (deltas.get(m.inventoryItemId) ?? 0n) + BigInt(m.quantityMilli),
+      );
+    }
+    const rows = await tx
+      .selectFrom('stock_balances')
+      .select(['inventory_item_id', 'on_hand'])
+      .where('location_id', '=', locationId)
+      .where('inventory_item_id', 'in', [...deltas.keys()])
+      .execute();
+    const onHand = new Map(
+      rows.map((r) => [r.inventory_item_id, BigInt(r.on_hand.replace('.', ''))]),
+    );
+    const abs = (v: bigint) => (v < 0n ? -v : v);
+    for (const [itemId, delta] of deltas) {
+      const before = onHand.get(itemId) ?? 0n;
+      const after = before + delta;
+      if (abs(after) > MAX_ON_HAND_MILLI && abs(after) > abs(before)) {
+        throw new ApiException(
+          422,
+          'QUANTITY_OUT_OF_RANGE',
+          'This would take the stock level beyond what KitchOS can record',
+        );
+      }
+    }
   }
 
   /**

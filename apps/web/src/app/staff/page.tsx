@@ -4,9 +4,12 @@ import type { LoginResponse } from '@kitchos/contracts';
 import { useMutation } from '@tanstack/react-query';
 import {
   BookOpen,
+  Boxes,
+  CalendarCheck,
   ChefHat,
   ClipboardCheck,
   LogOut,
+  PieChart,
   ShoppingCart,
   Undo2,
   Wallet,
@@ -161,12 +164,37 @@ function Workspaces() {
                     <Wallet className="size-4" aria-hidden /> Cash drawers
                   </Link>
                 )}
+                {(r.permissions.includes('waste.record') ||
+                  r.permissions.includes('inventory.view')) && (
+                  <Link
+                    href={`/inventory/${r.id}`}
+                    className="inline-flex h-11 items-center gap-2 rounded-lg border border-line px-4 text-sm font-semibold hover:bg-canvas"
+                  >
+                    <Boxes className="size-4" aria-hidden /> Inventory &amp; waste
+                  </Link>
+                )}
                 {r.permissions.includes('reports.view') && (
                   <Link
                     href={`/accounting/${r.id}`}
                     className="inline-flex h-11 items-center gap-2 rounded-lg border border-line px-4 text-sm font-semibold hover:bg-canvas"
                   >
                     <BookOpen className="size-4" aria-hidden /> Books
+                  </Link>
+                )}
+                {r.permissions.includes('reports.view') && (
+                  <Link
+                    href={`/close/${r.id}`}
+                    className="inline-flex h-11 items-center gap-2 rounded-lg border border-line px-4 text-sm font-semibold hover:bg-canvas"
+                  >
+                    <CalendarCheck className="size-4" aria-hidden /> Day close
+                  </Link>
+                )}
+                {r.permissions.includes('reports.view') && (
+                  <Link
+                    href={`/reports/${r.id}`}
+                    className="inline-flex h-11 items-center gap-2 rounded-lg border border-line px-4 text-sm font-semibold hover:bg-canvas"
+                  >
+                    <PieChart className="size-4" aria-hidden /> Food cost
                   </Link>
                 )}
               </div>
