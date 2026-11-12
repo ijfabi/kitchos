@@ -12,6 +12,7 @@ import {
   PieChart,
   ShoppingCart,
   Undo2,
+  Users,
   Wallet,
 } from 'lucide-react';
 import Link from 'next/link';
@@ -162,6 +163,14 @@ function Workspaces() {
                     className="inline-flex h-11 items-center gap-2 rounded-lg border border-line px-4 text-sm font-semibold hover:bg-canvas"
                   >
                     <Wallet className="size-4" aria-hidden /> Cash drawers
+                  </Link>
+                )}
+                {r.permissions.includes('shift.run') && (
+                  <Link
+                    href={`/shift/${r.id}`}
+                    className="inline-flex h-11 items-center gap-2 rounded-lg border border-line px-4 text-sm font-semibold hover:bg-canvas"
+                  >
+                    <Users className="size-4" aria-hidden /> Shift
                   </Link>
                 )}
                 {(r.permissions.includes('waste.record') ||

@@ -22,6 +22,7 @@ export const PERMISSIONS = [
   'cash.drawer',
   'cash.manage',
   'cash.admin',
+  'shift.run',
   'day.close',
   'reports.view',
 ] as const;
@@ -44,6 +45,7 @@ const SUPERVISOR: Permission[] = [
   'discount.approve',
   'payments.refund',
   'cash.manage',
+  'shift.run',
 ];
 const MANAGER: Permission[] = [
   ...SUPERVISOR,

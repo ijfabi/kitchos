@@ -1,5 +1,109 @@
 # Progress log
 
+## Milestone 18 — Shifts and shift close across drawers and people (2026-11-12)
+
+### Implemented (design decision: ADR-0018)
+
+- **Shifts:** a period of trading under one person in charge, across several drawers and cashiers.
+  - At most one shift is open per restaurant.
+  - Opening and closing need the new `shift.run` permission (shift supervisors and managers).
+  - Endpoints: `GET/POST /v1/restaurants/:id/shifts`, `GET …/shifts/current`, `GET …/shifts/:id`,
+    `POST …/shifts/:id/close`.
+  - Shifts are optional; day close does not depend on them.
+- **Stamping:** migration `0012_shifts` stamps orders, payments, refunds, discounts and drawer
+  sessions with the open shift by trigger, under a shared advisory lock held until commit.
+  - A stamp never changes, except that a shift opening takes in running drawer sessions that have
+    none.
+  - A close waits for every row stamped with its shift, and a later row finds no open shift.
+- **Close:** refused with `SHIFT_NOT_READY` until every one of the shift's drawers is counted and any
+  variance approved. It then stores an immutable snapshot (trigger) of:
+  - each drawer's count;
+  - per person: orders, sales, discounts, refunds, drawer variance;
+  - totals: orders, cancellations, card and cash, refunds, discounts, Σ variance.
+- **Blind counts:** cash totals, the variance and each person's sales stay hidden until every drawer
+  is counted. Otherwise a supervisor working a till could work out its expected cash.
+- **Screen:** `/shift/:restaurantId` lets a supervisor open a shift, see blockers, drawers, people and
+  totals, close with handover notes, and see earlier shifts. It is linked from the workspace picker.
+
+### Independent review and testing (subagents)
+
+The first design dated rows into a shift by time window. Both subagents found the same defect, and
+the tester reproduced it. A card payment whose transaction began before the close and committed after
+it was timestamped inside the closed shift, yet missing from its frozen snapshot (1190c expected, 0
+recorded). The reviewer also found that a shift open waiting behind a close could start before the
+close's time, so two shifts overlapped.
+
+Both were fixed by stamping, as above. The tester's race test was rewritten for that rule and now
+proves both sides:
+
+- a payment already written when the close starts is waited for and counted;
+- a payment written after the close belongs to no closed shift.
+
+Also from the review:
+
+- **Fixed:** the database now refuses a drawer joining a closed shift or one at another restaurant.
+- **Fixed:** a shift that closes after the cutoff is listed on the day it closed.
+- **Documented:** a taken-in drawer's expected cash can include sales from before the shift.
+- **Recorded as R-040:** crew can already estimate expected cash from the order list. This predates
+  shifts.
+
+The tester's other scenarios held against source rows:
+
+- access, from crew up to another org;
+- the runtime role cannot edit or delete a closed shift, or move a row's shift;
+- racing opens, 6 rounds of 3;
+- drawer open against shift open, and close against drawer open, count and approval, 6 rounds each;
+- a drawer awaiting approval, taken in by the next shift;
+- a multi-crew shift with cash rounding and refunds;
+- the snapshot unchanged after later trade;
+- consecutive shifts, with no payment in both.
+
+### Findings
+
+- Mutation checks: 7 mutants, all killed:
+  - no shared lock when a drawer opens (before stamping);
+  - no adoption;
+  - not blind;
+  - blockers ignored;
+  - the trigger takes no lock;
+  - the cash path locks its session before the shift lock (a deadlock order);
+  - no stamping.
+- The tester's first race test only appeared to wait. The owner connection cannot read the app
+  role's queries in `pg_stat_activity`, and a supertest request is not sent until awaited, so its
+  loop always timed out. It now polls `pg_locks` and fires the requests.
+
+### Tests executed
+
+| Suite                      | Result                                         |
+| -------------------------- | ---------------------------------------------- |
+| `@kitchos/domain`          | 61/61 passed                                   |
+| `@kitchos/api` integration | 475/475 passed (shuffled; 30 files); see below |
+| Playwright (14 journeys)   | 14/14 passed                                   |
+| ESLint / Prettier / tsc    | clean                                          |
+| `next build`               | succeeded                                      |
+
+Full-suite runs, in order:
+
+1. A failure in `security.test.ts`: it pinned the admin's restaurants at 3, and the new shift tests
+   add restaurants to the seeded org. It now compares against the org's restaurants in the database.
+2. An intermittent failure in `day-close.test.ts`: "a close waits for an entry being posted" settled
+   within its 750 ms window. That run also reported 29 files instead of 30. It did not reproduce:
+   - replaying the same shuffle seed passed 475/475;
+   - the file alone passed twice;
+   - it passed after the shift files.
+
+   Day close writes nothing that is stamped with a shift. Recorded as an unexplained flake.
+
+3. One clean run: 475/475.
+4. A second run was stopped by the host for low memory. Before that, one day-close adversarial test
+   had stalled for 27 minutes. That file passed alone (61/61, 19 s). The full run was not repeated.
+
+### Not done
+
+- Settling a shift's cash into the safe as a single handover entry (the books stay per drawer
+  and day).
+- A shift report export, and shift targets or labour figures.
+
 ## Milestone 17 — Food cost per menu item and category (2026-11-12)
 
 ### Implemented

@@ -142,6 +142,7 @@ export interface DrawerSessions {
   opening_float_cents: ColumnType<number, number | bigint, number | bigint>;
   org_id: string;
   restaurant_id: string;
+  shift_id: string | null;
   status: Generated<string>;
   variance_cents: ColumnType<number, number | bigint, number | bigint> | null;
   version: Generated<number>;
@@ -344,6 +345,7 @@ export interface OrderDiscounts {
   org_id: string;
   override_id: string | null;
   reason: string;
+  shift_id: string | null;
   value: ColumnType<number, number | bigint, number | bigint>;
 }
 
@@ -405,6 +407,7 @@ export interface Orders {
   public_token: Generated<string>;
   ready_at: Timestamp | null;
   restaurant_id: string;
+  shift_id: string | null;
   status: string;
   subtotal_cents: ColumnType<number, number | bigint, number | bigint>;
   tax_cents: ColumnType<number, number | bigint, number | bigint>;
@@ -454,6 +457,7 @@ export interface Payments {
   received_by: string | null;
   refunded_cents: Generated<ColumnType<number, number | bigint, number | bigint>>;
   restaurant_id: string;
+  shift_id: string | null;
   status: string;
   tendered_cents: ColumnType<number, number | bigint, number | bigint> | null;
   version: Generated<number>;
@@ -537,6 +541,7 @@ export interface Refunds {
   refunded_before_cents: ColumnType<number, number | bigint, number | bigint>;
   requested_by: string;
   restaurant_id: string;
+  shift_id: string | null;
   treatment: string;
 }
 
@@ -600,6 +605,21 @@ export interface SchemaMigrations {
   applied_at: Generated<Timestamp>;
   checksum: string;
   name: string;
+}
+
+export interface Shifts {
+  business_date: string;
+  closed_at: Timestamp | null;
+  closed_by: string | null;
+  id: Generated<string>;
+  notes: string | null;
+  opened_at: Generated<Timestamp>;
+  opened_by: string;
+  org_id: string;
+  restaurant_id: string;
+  status: Generated<string>;
+  summary: Json | null;
+  version: Generated<number>;
 }
 
 export interface Stations {
@@ -784,6 +804,7 @@ export interface DB {
   restaurants: Restaurants;
   role_assignments: RoleAssignments;
   schema_migrations: SchemaMigrations;
+  shifts: Shifts;
   stations: Stations;
   stock_balances: StockBalances;
   stock_count_lines: StockCountLines;

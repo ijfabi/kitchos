@@ -55,8 +55,8 @@ cash and books are checked and its figures fixed.
 - A manager cannot close tonight's trade until the cutoff (04:00 by default) plus 5 minutes.
   Closing earlier would need the business date to roll at the close, which every date calculation
   would have to learn; deferred until there is a need.
-- A drawer session is treated as one cashier's shift. There is no separate shift close across several
-  drawers or people.
+- A drawer session is one cashier on one drawer. Shifts across several drawers and people, and their
+  close, were added later by ADR-0018; day close does not depend on them.
 - Moving a restaurant's cutoff or timezone can make a closed day current again. There is no API for
   this today. Entries then post to the next open day, so nothing is lost (R-029).
 - A session that crosses midnight still posts its float and close to its opening day while its sales

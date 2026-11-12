@@ -39,6 +39,7 @@ Architecture decisions are recorded as ADRs in `docs/adr/`. Smaller decisions ar
 | D-019    | "Cash needs an open session" is an INSERT trigger, not a NOT VALID CHECK (re-checked on UPDATE, would block legacy refunds)                                                    | 2026-10-30 |
 | ADR-0016 | Inventory valuation: movements valued at insert by trigger; posted per event from recorded values; stock ledger reconciled to Inventory                                        | 2026-10-30 |
 | ADR-0017 | Business-day close: closes only once safe, immutable snapshot, entries for a closed day move to the first open day                                                             | 2026-11-02 |
+| ADR-0018 | Shifts across drawers and people: rows stamped with the open shift under a shared lock, close only when every drawer is counted, immutable snapshot, blind until counted       | 2026-11-12 |
 | D-022    | Food cost report from the journal, not source rows: agrees with day close; COGS labelled "food produced", not recipe cost of sales                                             | 2026-11-10 |
 | D-023    | Recipe cost of sales is dated by the journal's sale and refund entries, not source timestamps, so it agrees with revenue and closed days                                       | 2026-11-10 |
 | D-024    | Food cost per menu item: dated by journal entries like the food cost report; a product is one row, named and categorised by its newest sale; refunds by amount are shown apart | 2026-11-12 |

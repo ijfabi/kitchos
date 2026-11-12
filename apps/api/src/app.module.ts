@@ -10,6 +10,8 @@ import { MenuItemReportController } from './accounting/menu-item-report.controll
 import { ReconciliationService } from './accounting/reconciliation.service.ts';
 import { CashDrawerService } from './cash/cash-drawer.service.ts';
 import { CashController } from './cash/cash.controller.ts';
+import { ShiftController } from './cash/shift.controller.ts';
+import { ShiftService } from './cash/shift.service.ts';
 import { InventoryValuationPoster } from './accounting/inventory-valuation.poster.ts';
 import { LedgerConsumer } from './accounting/ledger.consumer.ts';
 import { LedgerService } from './accounting/ledger.service.ts';
@@ -72,6 +74,7 @@ export class AppModule {
         FoodCostController,
         MenuItemReportController,
         CashController,
+        ShiftController,
       ],
       providers: [
         { provide: APP_CONFIG, useValue: deps.config },
@@ -96,6 +99,7 @@ export class AppModule {
         DayCloseService,
         EventDispatcher,
         CashDrawerService,
+        ShiftService,
       ],
     };
   }

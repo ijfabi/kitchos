@@ -47,7 +47,19 @@ describe('authentication, authorisation and tenant isolation', () => {
 
     const admin = await login(h, 'admin@kitchos.test');
     const adminMe = await h.http.get('/v1/me').set(bearer(admin)).expect(200);
-    expect(adminMe.body.restaurants).toHaveLength(3);
+    // Every restaurant of the admin's organisation (other files add their own), none of Rival's.
+    const own = await h.owner
+      .selectFrom('restaurants as r')
+      .innerJoin('users as u', 'u.org_id', 'r.org_id')
+      .select('r.slug')
+      .where('u.email', '=', 'admin@kitchos.test')
+      .execute();
+    expect(own.map((r) => r.slug)).toEqual(
+      expect.arrayContaining(['kitchos-central', 'kitchos-drive', 'kitchos-express']),
+    );
+    expect(adminMe.body.restaurants.map((r: { slug: string }) => r.slug).sort()).toEqual(
+      own.map((r) => r.slug).sort(),
+    );
   });
 
   it('cross-tenant access is indistinguishable from a missing restaurant', async () => {

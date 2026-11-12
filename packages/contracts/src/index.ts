@@ -911,6 +911,84 @@ export const DayCloseViewSchema = z.object({
 });
 export type DayCloseView = z.infer<typeof DayCloseViewSchema>;
 
+// ---------------------------------------------------------------- shifts
+
+/** What was recorded under the shift: rows written while it was open are stamped with it (ADR-0018). */
+export const ShiftTotalsSchema = z.object({
+  /** Orders placed during the shift, cancelled ones included. */
+  ordersPlaced: z.number().int(),
+  ordersCancelled: z.number().int(),
+  /** Card payments captured during the shift. */
+  cardTakenCents: cents,
+  /** Cash collected (with rounding) and cash refunded; null while any of its drawers is uncounted. */
+  cashTakenCents: cents.nullable(),
+  cashRefundsCents: cents.nullable(),
+  /** All refunds made during the shift, any tender. */
+  refundsCents: cents,
+  /** Discounts and comps applied during the shift (GST inclusive). */
+  discountsCents: cents,
+  /** Σ variance of its drawers; null while any is uncounted. */
+  cashVarianceCents: cents.nullable(),
+});
+export type ShiftTotals = z.infer<typeof ShiftTotalsSchema>;
+
+export const ShiftDrawerSchema = z.object({
+  sessionId: uuid,
+  drawerName: z.string(),
+  cashier: z.string(),
+  status: z.enum(['open', 'pending_approval', 'closed']),
+  openingFloatCents: cents,
+  /** From the count's snapshot: empty until counted, so the cashier still counts blind. */
+  expectedCents: cents.nullable(),
+  countedCents: cents.nullable(),
+  varianceCents: cents.nullable(),
+  approvedBy: z.string().nullable(),
+});
+export type ShiftDrawer = z.infer<typeof ShiftDrawerSchema>;
+
+/** One person's part in the shift. */
+export const ShiftPersonSchema = z.object({
+  userId: uuid,
+  name: z.string(),
+  ordersPlaced: z.number().int(),
+  /**
+   * Their orders placed during the shift that were paid and not cancelled (GST inclusive); null
+   * while any drawer of the shift is uncounted (it would reveal a till's expected cash).
+   */
+  salesCents: cents.nullable(),
+  discountsCents: cents,
+  refundsCents: cents,
+  /** Σ variance of the drawers they ran; null if they ran none or one is uncounted. */
+  cashVarianceCents: cents.nullable(),
+});
+export type ShiftPerson = z.infer<typeof ShiftPersonSchema>;
+
+export const ShiftViewSchema = z.object({
+  id: uuid,
+  status: z.enum(['open', 'closed']),
+  businessDate: z.string(),
+  openedBy: z.string(),
+  openedAt: z.string(),
+  closedBy: z.string().nullable(),
+  closedAt: z.string().nullable(),
+  notes: z.string().nullable(),
+  /** Empty once closed. */
+  blockers: z.array(DayCloseIssueSchema),
+  warnings: z.array(DayCloseIssueSchema),
+  /** Live while open; as recorded at the close once closed. */
+  totals: ShiftTotalsSchema,
+  drawers: z.array(ShiftDrawerSchema),
+  people: z.array(ShiftPersonSchema),
+});
+export type ShiftView = z.infer<typeof ShiftViewSchema>;
+
+export const CurrentShiftSchema = z.object({ shift: ShiftViewSchema.nullable() });
+export type CurrentShift = z.infer<typeof CurrentShiftSchema>;
+
+export const CloseShiftRequestSchema = z.object({
+  notes: z.string().trim().min(1).max(500).optional(),
+});
+
 // ---------------------------------------------------------------- food cost
 
 const foodCostFigures = {

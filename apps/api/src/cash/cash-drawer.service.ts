@@ -9,6 +9,7 @@ import { audit } from '../infra/audit.ts';
 import { ApiException, forbidden, notFound } from '../infra/http-errors.ts';
 import { idempotent, type IdempotentResult } from '../infra/idempotency.ts';
 import { DB } from '../infra/tokens.ts';
+import { lockShifts } from './shift.service.ts';
 
 export interface CashContext {
   orgId: string;
@@ -63,7 +64,9 @@ export async function drawerFacts(tx: Tx, sessionId: string): Promise<DrawerFact
  * may put cash through it. The row is locked FOR SHARE so a concurrent count
  * (FOR UPDATE) cannot close the session underneath a payment. Cash leaving the
  * drawer (refunds) takes FOR UPDATE instead, so two refunds through the same
- * drawer cannot both pass the available-cash check.
+ * drawer cannot both pass the available-cash check. The shift lock comes first:
+ * the payment or refund row takes it when stamped with its shift (ADR-0018), and
+ * a shift opening holds it while it waits to take this session in.
  */
 export async function resolveCashSession(
   tx: Tx,
@@ -74,6 +77,7 @@ export async function resolveCashSession(
     lock?: 'share' | 'update';
   },
 ): Promise<string> {
+  await lockShifts(tx, args.restaurantId, 'shared');
   let q = tx
     .selectFrom('drawer_sessions')
     .select(['id', 'opened_by', 'status'])

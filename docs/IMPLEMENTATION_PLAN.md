@@ -67,8 +67,8 @@ tender and per entry (R-030). Done (Milestone 14): prepared food recorded as was
 refund (R-032). Done (Milestone 15): refunds by item with per-line GST, replace an item, and live
 figures for managers (R-019 for items, R-028, R-035). Done (Milestone 16): recipe cost of sales
 (theoretical food cost) on the food cost report (R-031). Done (Milestone 17): food cost per
-menu item and category (D-024). A separate shift close is
-not done.
+menu item and category (D-024). Done (Milestone 18): shifts across drawers and people and
+their close (ADR-0018).
 
 Double-entry journal (immutable, balanced, reversals), posting rules from outbox events via an
 idempotent consumer, refunds and payment reversal, cash drawers and till sessions, shift and
@@ -104,6 +104,5 @@ reliability drills, deployment docs, measured benchmark report.
 
 ## Immediate next tasks
 
-1. Shift close across drawers and people; a drawer session is one cashier's shift today.
-2. Transfers between restaurants, lots and expiry, unit conversions (Phase 2).
-3. CSV export of the food cost and menu item reports (Phase 3 "reports + PDF/CSV export").
+1. Transfers between restaurants, lots and expiry, unit conversions (Phase 2).
+2. CSV export of the food cost and menu item reports (Phase 3 "reports + PDF/CSV export").
