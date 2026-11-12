@@ -1,5 +1,82 @@
 # Progress log
 
+## Milestone 17 — Food cost per menu item and category (2026-11-12)
+
+### Implemented
+
+- **Report:** `GET /v1/restaurants/:id/reports/menu-items?from&to` (`reports.view`, at most 92
+  days). Each menu item (a meal is one row, costed with its components) and each category shows:
+  - units sold;
+  - net sales (ex GST, after discounts);
+  - recipe cost;
+  - recipe cost as a share of net sales;
+  - gross profit.
+- **How it is dated:** like the food cost report, by the journal's sale and refund entries. Refunds
+  by item take back their units, their stored amount less GST, and their exact cumulative share of
+  recipe cost.
+- **Refunds by amount:** they name no items, so they are shown apart (R-038). The totals are items
+  less refunds by amount. They equal the food cost report's net sales and recipe cost of sales to
+  the cent.
+- **Naming (D-024):** a product is one row, named and placed in a category by its newest sale.
+- **Screen:** a "By menu item" table under the food cost report, grouped by category, with negative
+  gross profit in red.
+- No schema change.
+
+### Recovery before work
+
+The repository's `.git/config` was all null bytes, so git could not run. It was rebuilt from
+`FETCH_HEAD`: origin `github.com/ijfabi/kitchos`, with `main` tracking it. The corrupt copy was
+kept outside the repo. This slice was already partly written but uncommitted and unverified; it was
+completed and verified here.
+
+### Independent review and testing (subagents)
+
+- **Review:** the totals reconcile in every case examined:
+  - discounts and comps;
+  - GST-free lines;
+  - cash rounding;
+  - meals;
+  - refunds of every kind;
+  - late entries.
+
+  One real defect: a row's name and category came from whichever line was read first, with no
+  ordering. A product renamed or moved between menu versions could change label between refreshes.
+  Fixed by D-024, with a test (mutation-checked).
+
+- **Tester:** wrote `menu-item-report-adversarial.test.ts` in a throwaway organisation. Expected
+  figures are rebuilt from source rows, with their own GST split and rounding. It covers:
+  - percent and amount discounts across lines, and a comp;
+  - GST-free water and meals;
+  - a cash sale with rounding from a drawer;
+  - refunds by item one unit at a time, across days (including a refund-only day with negative
+    units);
+  - refunds by amount;
+  - a remake;
+  - cancellation with a deposit refund;
+  - all 15 sub-ranges of five days;
+  - tenant and restaurant isolation.
+
+  Every invariant held. It hit the same naming defect, assuming sales split by the category they
+  were sold under. The test now asserts D-024 instead.
+
+- **Fix during review:** the first version grouped sold lines by order in O(orders × lines). It now
+  uses a map.
+
+### Tests executed
+
+| Suite                      | Result                                  |
+| -------------------------- | --------------------------------------- |
+| `@kitchos/domain`          | 61/61 passed                            |
+| `@kitchos/api` integration | 455/455 passed (×2, shuffled; 28 files) |
+| Playwright (13 journeys)   | 13/13 passed                            |
+| ESLint / Prettier / tsc    | clean                                   |
+| `next build`               | succeeded                               |
+
+### Not done
+
+- CSV/PDF export of reports.
+- Food cost per category as a menu's categories stood at the time of sale (D-024 chose the newest).
+
 ## Milestone 16 — Recipe cost of sales (theoretical food cost) (2026-11-10)
 
 ### Implemented

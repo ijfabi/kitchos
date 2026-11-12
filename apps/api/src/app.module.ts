@@ -6,6 +6,7 @@ import { AccountingController } from './accounting/accounting.controller.ts';
 import { DayCloseController, FailedEventsController } from './accounting/day-close.controller.ts';
 import { DayCloseService } from './accounting/day-close.service.ts';
 import { FoodCostController } from './accounting/food-cost.controller.ts';
+import { MenuItemReportController } from './accounting/menu-item-report.controller.ts';
 import { ReconciliationService } from './accounting/reconciliation.service.ts';
 import { CashDrawerService } from './cash/cash-drawer.service.ts';
 import { CashController } from './cash/cash.controller.ts';
@@ -69,6 +70,7 @@ export class AppModule {
         DayCloseController,
         FailedEventsController,
         FoodCostController,
+        MenuItemReportController,
         CashController,
       ],
       providers: [

@@ -1,6 +1,6 @@
 'use client';
 
-import type { FoodCostReport } from '@kitchos/contracts';
+import type { FoodCostReport, MenuItemReport } from '@kitchos/contracts';
 import { useQuery } from '@tanstack/react-query';
 import { clsx } from 'clsx';
 import { ArrowLeft } from 'lucide-react';
@@ -111,7 +111,17 @@ function FoodCost({ session }: { session: StaffSession }) {
         ) : !report.data ? (
           <Spinner label="Loading food cost" />
         ) : (
-          <Report data={report.data} />
+          <>
+            <Report data={report.data} />
+            {range && (
+              <ByMenuItem
+                restaurantId={restaurantId}
+                token={token}
+                from={range.from}
+                to={range.to}
+              />
+            )}
+          </>
         )}
       </main>
     </div>
@@ -212,6 +222,128 @@ function Report({ data }: { data: FoodCostReport }) {
         </table>
       </Card>
     </>
+  );
+}
+
+/** Food cost per menu item and category, for the same range. */
+function ByMenuItem({
+  restaurantId,
+  token,
+  from,
+  to,
+}: {
+  restaurantId: string;
+  token: string;
+  from: string;
+  to: string;
+}) {
+  const report = useQuery({
+    queryKey: ['menu-items', restaurantId, from, to],
+    queryFn: ({ signal }) =>
+      get<MenuItemReport>(
+        `/v1/restaurants/${restaurantId}/reports/menu-items?from=${from}&to=${to}`,
+        token,
+        signal,
+      ),
+    refetchInterval: 60_000,
+  });
+  if (report.isPending) return <Spinner label="Loading menu items" />;
+  if (report.isError) {
+    return <EmptyState title="Cannot load menu items" hint={report.error.message} />;
+  }
+  const r = report.data;
+  return (
+    <section aria-label="By menu item">
+      <h2 className="mb-2 font-bold">By menu item</h2>
+      {r.items.length === 0 ? (
+        <EmptyState className="py-6" title="Nothing sold in this range" />
+      ) : (
+        <Card className="overflow-x-auto p-0">
+          <table className="w-full text-sm">
+            <caption className="sr-only">Food cost by menu item</caption>
+            <thead>
+              <tr className="text-left text-ink-muted">
+                <th scope="col" className="px-3 py-2 font-medium">
+                  Item
+                </th>
+                <th scope="col" className="px-3 py-2 text-right font-medium">
+                  Sold
+                </th>
+                <th scope="col" className="px-3 py-2 text-right font-medium">
+                  Net sales
+                </th>
+                <th scope="col" className="px-3 py-2 text-right font-medium">
+                  Recipe cost
+                </th>
+                <th scope="col" className="px-3 py-2 text-right font-medium">
+                  Recipe %
+                </th>
+                <th scope="col" className="px-3 py-2 text-right font-medium">
+                  Gross profit
+                </th>
+              </tr>
+            </thead>
+            {r.categories.map((c) => (
+              <tbody key={c.category}>
+                <tr
+                  className="border-t border-line bg-canvas font-semibold"
+                  data-testid="category-row"
+                >
+                  <th scope="row" className="px-3 py-2 text-left">
+                    {c.category}
+                  </th>
+                  <td className="px-3 py-2 text-right tabular-nums">{c.unitsSold}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{money(c.netSalesCents)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{money(c.recipeCostCents)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{percent(c.recipeCostBps)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{money(c.grossProfitCents)}</td>
+                </tr>
+                {r.items
+                  .filter((i) => i.category === c.category)
+                  .map((i) => (
+                    <tr
+                      key={i.productId}
+                      className="border-t border-line"
+                      data-testid="item-row"
+                      data-item={i.name}
+                    >
+                      <th scope="row" className="px-3 py-2 pl-6 text-left font-normal">
+                        {i.name}
+                      </th>
+                      <td className="px-3 py-2 text-right tabular-nums" data-testid="item-sold">
+                        {i.unitsSold}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">
+                        {money(i.netSalesCents)}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">
+                        {money(i.recipeCostCents)}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">
+                        {percent(i.recipeCostBps)}
+                      </td>
+                      <td
+                        className={clsx(
+                          'px-3 py-2 text-right tabular-nums',
+                          i.grossProfitCents < 0 && 'text-danger',
+                        )}
+                      >
+                        {money(i.grossProfitCents)}
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+            ))}
+          </table>
+        </Card>
+      )}
+      <p className="mt-2 text-xs text-ink-muted">
+        Net sales are ex GST and after discounts, less items refunded.{' '}
+        {r.refundsByAmountCents !== 0 &&
+          `Refunds by amount (${money(r.refundsByAmountCents)} ex GST) name no items, so they are not in any row. `}
+        Total net sales {money(r.totals.netSalesCents)}, the same as the daily figures above.
+      </p>
+    </section>
   );
 }
 

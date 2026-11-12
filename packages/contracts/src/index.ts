@@ -962,6 +962,38 @@ export const FoodCostReportSchema = z.object({
 });
 export type FoodCostReport = z.infer<typeof FoodCostReportSchema>;
 
+const itemFigures = {
+  /** Units sold less units refunded by item. */
+  unitsSold: z.number().int(),
+  /** Net price ex GST (after discount), less refunds by item. */
+  netSalesCents: cents,
+  /** What the units sold were consumed at (a meal: its components), less refunds by item. */
+  recipeCostCents: cents,
+  grossProfitCents: cents,
+  /** Recipe cost as basis points of net sales; null without positive sales. */
+  recipeCostBps: z.number().int().nullable(),
+};
+
+/** Food cost per menu item and category, dated like the food cost report. */
+export const MenuItemReportSchema = z.object({
+  from: z.string(),
+  to: z.string(),
+  items: z.array(
+    z.object({ productId: uuid, name: z.string(), category: z.string(), ...itemFigures }),
+  ),
+  categories: z.array(z.object({ category: z.string(), ...itemFigures })),
+  /** Refunds by amount name no items, so they are not in any row (ex GST). */
+  refundsByAmountCents: cents,
+  /** Items less refunds by amount: equals the food cost report's net sales for the range. */
+  totals: z.object({
+    netSalesCents: cents,
+    recipeCostCents: cents,
+    grossProfitCents: cents,
+    recipeCostBps: z.number().int().nullable(),
+  }),
+});
+export type MenuItemReport = z.infer<typeof MenuItemReportSchema>;
+
 /** An event the ledger gave up on after repeated failures. */
 export const FailedEventViewSchema = z.object({
   eventId: uuid,

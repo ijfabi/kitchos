@@ -66,7 +66,8 @@ food cost and gross profit report from the journal. Done (Milestone 13): reconci
 tender and per entry (R-030). Done (Milestone 14): prepared food recorded as waste on cancel and
 refund (R-032). Done (Milestone 15): refunds by item with per-line GST, replace an item, and live
 figures for managers (R-019 for items, R-028, R-035). Done (Milestone 16): recipe cost of sales
-(theoretical food cost) on the food cost report (R-031). A separate shift close is
+(theoretical food cost) on the food cost report (R-031). Done (Milestone 17): food cost per
+menu item and category (D-024). A separate shift close is
 not done.
 
 Double-entry journal (immutable, balanced, reversals), posting rules from outbox events via an
@@ -103,6 +104,6 @@ reliability drills, deployment docs, measured benchmark report.
 
 ## Immediate next tasks
 
-1. Per-item food cost: recipe cost and margin by menu item and category.
-2. Shift close across drawers and people; a drawer session is one cashier's shift today.
-3. Transfers between restaurants, lots and expiry, unit conversions (Phase 2).
+1. Shift close across drawers and people; a drawer session is one cashier's shift today.
+2. Transfers between restaurants, lots and expiry, unit conversions (Phase 2).
+3. CSV export of the food cost and menu item reports (Phase 3 "reports + PDF/CSV export").

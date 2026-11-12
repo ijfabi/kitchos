@@ -55,6 +55,21 @@ test('the food cost screen shows what the books hold for each day', async ({
   await expect(todayRow.getByTestId('net-sales')).toHaveText(aud(api.days[0]!.netSalesCents));
   await expect(todayRow.getByTestId('sold-recipe')).toHaveText(aud(api.days[0]!.soldRecipeCents));
 
+  // By menu item: the totals line agrees with the daily figures, from the same journal.
+  const byItem = page.getByRole('region', { name: 'By menu item' });
+  await expect(byItem).toBeVisible();
+  const items = (await (
+    await request.get(
+      `${API}/restaurants/${central.id}/reports/menu-items?from=${businessDate}&to=${businessDate}`,
+      { headers: { Authorization: `Bearer ${accessToken}` } },
+    )
+  ).json()) as { totals: { netSalesCents: number }; items: { name: string; unitsSold: number }[] };
+  expect(items.totals.netSalesCents).toBe(api.days[0]!.netSalesCents);
+  for (const i of items.items) {
+    const row = byItem.locator(`[data-testid="item-row"][data-item="${i.name}"]`);
+    await expect(row.getByTestId('item-sold')).toHaveText(String(i.unitsSold));
+  }
+
   // An impossible range is caught before asking the server.
   await page
     .getByLabel('From')
