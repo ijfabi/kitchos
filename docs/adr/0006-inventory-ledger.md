@@ -10,8 +10,8 @@
 - **`stock_balances`** is a projection maintained by an `AFTER INSERT` trigger (`SECURITY DEFINER`)
   in the same transaction. Reconcilable at any time: `on_hand = Σ quantity_delta`.
 - **Exactly-once:** every movement names its cause (`source_type`, `source_id`, `source_key`). The
-  unique constraint over `(org, source, item, movement_type)` makes replays — duplicate events,
-  double taps, retried requests — inserts that do nothing. Consumption for an order line uses
+  unique constraint over `(org, source, item, movement_type)` makes replays (duplicate events,
+  double taps, retried requests) inserts that do nothing. Consumption for an order line uses
   `source_type = 'order_line'`, `source_id = order_lines.id`.
 - **Consumption point is configurable per recipe version**: `order_accepted`, `task_started` or
   `task_completed`. Order submission, payment and physical consumption are distinct events.

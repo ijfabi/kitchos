@@ -81,6 +81,37 @@ export function countPostings(inventoryDeltaCents: number): Posting[] {
 }
 
 /**
+ * Stock dispatched to another restaurant (ADR-0019): Dr Stock in transit / Cr Inventory at the
+ * sender, at the value the dispatch was recorded at.
+ */
+export function transferOutPostings(inventoryDeltaCents: number): Posting[] {
+  nonPositive(inventoryDeltaCents, 'A dispatch');
+  return toPostings(moved(inventoryDeltaCents, 'stock_in_transit', 'Stock dispatched'));
+}
+
+/**
+ * A transfer received, at the receiver: what arrived moves Dr Inventory / Cr Stock in transit at
+ * the dispatch's cost, and what was sent but did not arrive is written off, Dr Transfer shortage /
+ * Cr Stock in transit. Together they clear the whole dispatched value out of transit.
+ */
+export function transferInPostings(input: {
+  receivedDeltaCents: number;
+  shortageCents: number;
+}): Posting[] {
+  nonNegative(input.receivedDeltaCents, 'A transfer receipt');
+  nonNegative(input.shortageCents, 'A transfer shortage');
+  return toPostings([
+    { account: 'inventory', amount: input.receivedDeltaCents, memo: 'Stock received by transfer' },
+    {
+      account: 'stock_in_transit',
+      amount: -(input.receivedDeltaCents + input.shortageCents),
+      memo: input.shortageCents > 0 ? 'Transfer cleared: received and short' : 'Transfer cleared',
+    },
+    { account: 'transfer_shortage', amount: input.shortageCents, memo: 'Short on arrival' },
+  ]);
+}
+
+/**
  * A waste record (ADR-0011):
  * - stock deducted now (raw or not-yet-consumed prepared items):
  *   Dr Waste expense / Cr Inventory;

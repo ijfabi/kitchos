@@ -18,7 +18,9 @@ export interface EntryInput {
     | 'waste_reversal'
     | 'goods_receipt'
     | 'stock_count'
-    | 'opening_stock';
+    | 'opening_stock'
+    | 'transfer_out'
+    | 'transfer_in';
   sourceType: string;
   sourceId: string;
   sourceEventId: string | null;

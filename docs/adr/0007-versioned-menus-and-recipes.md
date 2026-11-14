@@ -8,7 +8,7 @@
   change to a published version or its children (items, combo components, modifier groups,
   options, option ingredients, recipe lines), except the published → retired status change.
 - A menu version **pins** a recipe version for each item and combo component. Changing a recipe
-  therefore requires publishing a new menu version — this is the head-office rollout unit.
+  therefore requires publishing a new menu version. This is the head-office rollout unit.
 - An order stores `menu_version_id`; each producible line stores `recipe_version_id`,
   `station_type`, `consumption_point`, and an immutable `order_line_ingredients` snapshot of the
   exploded requirement (base recipe + modifier deltas, clamped at zero, × quantity).

@@ -9,7 +9,7 @@
   from `pending_payment` to `accepted`; a failed payment leaves the order awaiting payment.
 - KitchOS accepts **only provider tokens** (`tok_…`) produced client-side by a payment SDK. The
   contract rejects anything else, so PAN/CVV can never be submitted or stored (PCI DSS scope
-  reduction — SAQ applicability to be confirmed by a QSA).
+  reduction; SAQ applicability to be confirmed by a QSA).
 - The current provider is a deterministic **sandbox** (`tok_sandbox_approve`,
   `tok_sandbox_decline`, …). Payment collection is **not** revenue recognition; journal postings
   arrive with the accounting module (Phase 3).

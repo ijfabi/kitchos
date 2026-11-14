@@ -11,7 +11,7 @@
   reloaded on every request, so revocation and role changes are immediate.
 - RBAC (role → permissions) combined with ABAC on the restaurant hierarchy
   (assignment scope must cover the target restaurant).
-- Login is rate-limited per IP and per (IP, email) — in-process for now.
+- Login is rate-limited per IP and per (IP, email), in process for now.
 
 ## Planned (tracked in FEATURE_MATRIX / RISKS)
 

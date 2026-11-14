@@ -541,6 +541,69 @@ export const GoodsReceiptViewSchema = z.object({
 });
 export type GoodsReceiptView = z.infer<typeof GoodsReceiptViewSchema>;
 
+// ---------------------------------------------------------------- stock transfers (ADR-0019)
+
+const uniqueItems = (ls: { inventoryItemId: string }[]) =>
+  new Set(ls.map((l) => l.inventoryItemId)).size === ls.length;
+
+export const StockTransferRequestSchema = z.object({
+  toRestaurantId: uuid,
+  notes: z.string().trim().min(1).max(500).optional(),
+  lines: z
+    .array(z.object({ inventoryItemId: uuid, quantity: decimalQty }))
+    .min(1)
+    .max(200)
+    .refine(uniqueItems, 'Each item may appear once'),
+});
+export type StockTransferRequest = z.input<typeof StockTransferRequestSchema>;
+
+/** What arrived, for every line of the transfer (zero when nothing did). */
+export const ReceiveTransferRequestSchema = z.object({
+  notes: z.string().trim().min(1).max(500).optional(),
+  lines: z
+    .array(z.object({ inventoryItemId: uuid, quantityReceived: decimalQtyOrZero }))
+    .min(1)
+    .max(200)
+    .refine(uniqueItems, 'Each item may appear once'),
+});
+export type ReceiveTransferRequest = z.input<typeof ReceiveTransferRequestSchema>;
+
+const TransferPartySchema = z.object({ id: uuid, name: z.string() });
+
+export const StockTransferViewSchema = z.object({
+  id: uuid,
+  status: z.enum(['in_transit', 'received']),
+  from: TransferPartySchema,
+  to: TransferPartySchema,
+  dispatchedBy: z.string(),
+  dispatchedAt: z.string(),
+  dispatchBusinessDate: z.string(),
+  notes: z.string().nullable(),
+  receivedBy: z.string().nullable(),
+  receivedAt: z.string().nullable(),
+  receiveBusinessDate: z.string().nullable(),
+  receiveNotes: z.string().nullable(),
+  /** Value that left the sender, at the dispatch's recorded cost. */
+  sentCents: cents,
+  /** Value that arrived and was short; null until received. */
+  receivedCents: cents.nullable(),
+  shortageCents: cents.nullable(),
+  lines: z.array(
+    z.object({
+      inventoryItemId: uuid,
+      sku: z.string(),
+      name: z.string(),
+      baseUnit: z.string(),
+      quantitySent: z.string(),
+      quantityReceived: z.string().nullable(),
+    }),
+  ),
+});
+export type StockTransferView = z.infer<typeof StockTransferViewSchema>;
+
+export const TransferDestinationSchema = TransferPartySchema;
+export type TransferDestination = z.infer<typeof TransferDestinationSchema>;
+
 // ---------------------------------------------------------------- discounts & manager overrides
 
 export const DISCOUNT_REASONS = [
@@ -876,6 +939,8 @@ export const DayCloseTotalsSchema = z.object({
   cogsCents: cents,
   wasteCents: cents,
   stockVarianceCents: cents,
+  /** Stock sent here that did not arrive (ADR-0019). Absent on days closed before transfers existed. */
+  transferShortageCents: cents.optional(),
   /** Positive when drawers came up short. */
   cashOverShortCents: cents,
   pettyCashCents: cents,

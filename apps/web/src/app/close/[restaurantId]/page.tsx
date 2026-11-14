@@ -203,6 +203,9 @@ function Day({
           <Row k="Cost of goods sold" v={t.cogsCents} />
           <Row k="Waste" v={t.wasteCents} />
           <Row k="Stock count variance" v={t.stockVarianceCents} />
+          {t.transferShortageCents !== undefined && (
+            <Row k="Transfer shortage" v={t.transferShortageCents} />
+          )}
           <Row k="Cash short (over)" v={t.cashOverShortCents} />
           <Row k="Petty cash" v={t.pettyCashCents} />
         </dl>

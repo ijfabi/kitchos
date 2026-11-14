@@ -5,9 +5,42 @@
 | Domain unit       | Vitest + fast-check                        | Money, rounding, allocation, quantities, pricing, recipe explosion, state machines   |
 | API integration   | Vitest + Supertest + Testcontainers (PG18) | Full HTTP flows against real migrations, seed, RLS and the restricted runtime role   |
 | Database          | Same harness                               | Append-only and immutability triggers, grants, reconciliation of projections         |
-| E2E               | Playwright (Chromium)                      | Customer order → kitchen → pickup through the real UI (local; CI job pending)        |
+| E2E               | Playwright (Chromium)                      | 10 journeys through the real UI, API and database, locally and in the CI `e2e` job   |
 | Load (planned)    | k6                                         | Order placement and kitchen commands; reports must state hardware, data, concurrency |
 | Reliability (pl.) | Fault injection                            | Process kill mid-transaction, DB failover, duplicate/out-of-order events, WAN loss   |
+
+## Current suites
+
+Counted on 14 November 2026, including the Milestone 19 files.
+
+| Suite                      | Files | Tests | Last result                                                                         |
+| -------------------------- | ----- | ----- | ----------------------------------------------------------------------------------- |
+| `@kitchos/domain`          | 12    | 63    | 63 passed                                                                           |
+| `@kitchos/api` integration | 33    | 507   | 507 passed (one full shuffled run, seed `1794652460414`)                            |
+| Playwright journeys        | 10    | 15    | 12 passed, 3 failed on a reused local database (see below); the transfer one passed |
+
+The three Playwright failures on 14 November (`inventory.spec.ts` waste journey and two in
+`order-journey.spec.ts`) were caused by test data, not the code under test. Order numbers restart
+each business day, the local database held journey orders from earlier days, and the tests pick
+orders by number, so each one found two orders with the same number. CI runs the journeys on a fresh
+database. Locally, `pnpm db:reset` before `pnpm test:e2e` avoids it. Making those tests select
+orders by id would remove the dependency.
+
+Integration test files come in pairs for most features: a file written with the feature, and an
+`-adversarial` file written independently to try to break it.
+
+## CI
+
+`.github/workflows/ci.yml` runs on every push to `main` and every pull request:
+
+```mermaid
+flowchart LR
+  P["push or pull request"] --> Q["quality: lint, format,<br/>typecheck, domain tests"]
+  P --> I["integration: API tests,<br/>Testcontainers PG 18"]
+  P --> S["schema-drift: migrate,<br/>codegen, git diff"]
+  P --> A["audit: pnpm audit --prod<br/>(informational)"]
+  P --> E["e2e: migrate, seed,<br/>Playwright"]
+```
 
 ## Independent review
 

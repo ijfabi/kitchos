@@ -22,6 +22,8 @@ export type MovementType =
   | 'waste_raw'
   | 'waste_prepared'
   | 'count_adjustment'
+  | 'transfer_out'
+  | 'transfer_in'
   | 'correction';
 
 export interface MovementInput {

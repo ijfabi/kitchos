@@ -25,14 +25,14 @@ Every waste record stores per-ingredient lines with a **treatment**:
   waste reflects exactly what was made (modifiers included).
 - **Cost** is computed at standard cost (`inventory_items.standard_unit_cost`, exact decimal
   arithmetic, ADR-0004). Reports split total waste cost into _reclassified from consumption_
-  (already inside COGS — move it, do not add it) and _deducted directly_. This is what lets the
+  (already inside COGS: move it, do not add it) and _deducted directly_. This is what lets the
   shift report show waste without double-counting it against food cost.
 - Records above the restaurant's `waste_approval_threshold_cents` are `pending_approval`; the
   physical loss is still recorded immediately (it happened). Approval requires `waste.approve`
   and a reviewer other than the recorder. **Rejection** (e.g. mis-keyed quantity) appends
   `correction` movements reversing what the record deducted (`source_type = waste_reversal`,
   `source_key = original movement id`), never editing or deleting history. Remake consumption is
-  not reversed — the replacement was physically made.
+  not reversed, because the replacement was physically made.
 - Waste requests are idempotent (`Idempotency-Key`), and each movement's source key makes a
   replay a no-op.
 - **Waste of an order line is capped cumulatively, under the order lock** (added in Milestone 10).

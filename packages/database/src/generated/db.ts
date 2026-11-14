@@ -710,6 +710,33 @@ export interface StockReservations {
   status: Generated<string>;
 }
 
+export interface StockTransferLines {
+  inventory_item_id: string;
+  org_id: string;
+  quantity_received: Numeric | null;
+  quantity_sent: Numeric;
+  stock_transfer_id: string;
+}
+
+export interface StockTransfers {
+  dispatch_business_date: string;
+  dispatched_at: Generated<Timestamp>;
+  dispatched_by: string;
+  from_location_id: string;
+  from_restaurant_id: string;
+  id: Generated<string>;
+  notes: string | null;
+  org_id: string;
+  receive_business_date: string | null;
+  receive_notes: string | null;
+  received_at: Timestamp | null;
+  received_by: string | null;
+  status: Generated<string>;
+  to_location_id: string;
+  to_restaurant_id: string;
+  version: Generated<number>;
+}
+
 export interface Users {
   created_at: Generated<Timestamp>;
   display_name: string;
@@ -812,6 +839,8 @@ export interface DB {
   stock_locations: StockLocations;
   stock_movements: StockMovements;
   stock_reservations: StockReservations;
+  stock_transfer_lines: StockTransferLines;
+  stock_transfers: StockTransfers;
   users: Users;
   waste_record_lines: WasteRecordLines;
   waste_records: WasteRecords;

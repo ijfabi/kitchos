@@ -375,6 +375,7 @@ export class DayCloseService {
       cogsCents: -credit('cogs'),
       wasteCents: -credit('waste_expense'),
       stockVarianceCents: -credit('stock_variance'),
+      transferShortageCents: -credit('transfer_shortage'),
       cashOverShortCents: -credit('cash_over_short'),
       pettyCashCents: -credit('petty_cash'),
     };

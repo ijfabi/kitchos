@@ -4,6 +4,8 @@ import {
   consumptionPostings,
   countPostings,
   receiptPostings,
+  transferInPostings,
+  transferOutPostings,
   wastePostings,
   wasteReversalPostings,
   type Posting,
@@ -16,6 +18,7 @@ import {
   WASTE_REVERSAL_SOURCE,
   WASTE_SOURCE,
 } from '../inventory/stock-operations.service.ts';
+import { STOCK_TRANSFER_SOURCE } from '../inventory/stock-transfer.service.ts';
 import type { ConsumedEvent } from './ledger.consumer.ts';
 import { LedgerService, type EntryInput } from './ledger.service.ts';
 
@@ -48,6 +51,8 @@ interface MovementFilter {
  *   inventory.goods_received   -> goods receipt (Cr goods received not invoiced)
  *   inventory.counted          -> stock count variance
  *   inventory.opening_stock    -> opening stock (Cr opening balance equity)
+ *   inventory.transfer_dispatched -> stock into transit, at the sender (ADR-0019)
+ *   inventory.transfer_received   -> transit cleared into inventory and shortage, at the receiver
  */
 @Injectable()
 export class InventoryValuationPoster {
@@ -60,6 +65,8 @@ export class InventoryValuationPoster {
     'inventory.goods_received',
     'inventory.counted',
     'inventory.opening_stock',
+    'inventory.transfer_dispatched',
+    'inventory.transfer_received',
   ] as const;
 
   constructor(@Inject(LedgerService) private readonly ledger: LedgerService) {}
@@ -117,7 +124,61 @@ export class InventoryValuationPoster {
         return this.simple(tx, event, OPENING_STOCK_SOURCE, 'opening_stock', (v) =>
           receiptPostings(v, 'opening'),
         );
+      case 'inventory.transfer_dispatched':
+        return this.transferDispatched(tx, event);
+      case 'inventory.transfer_received':
+        return this.transferReceived(tx, event);
     }
+  }
+
+  private async transferDispatched(tx: Tx, event: ConsumedEvent): Promise<void> {
+    const out = await this.value(tx, {
+      sourceType: STOCK_TRANSFER_SOURCE,
+      sourceId: event.aggregateId,
+      movementType: 'transfer_out',
+    });
+    if (!out) return;
+    await this.post(tx, event, {
+      businessDate: out.businessDate,
+      entryType: 'transfer_out',
+      sourceType: STOCK_TRANSFER_SOURCE,
+      sourceId: event.aggregateId,
+      description: 'Stock transfer dispatched',
+      postings: transferOutPostings(out.cents),
+    });
+  }
+
+  /**
+   * At the receiver: what arrived (valued at the dispatch's cost) leaves transit into
+   * Inventory, and the rest of the dispatched value is the shortage, so the transfer
+   * leaves nothing in transit. Nothing may have arrived at all, hence the transfer's
+   * own receive date.
+   */
+  private async transferReceived(tx: Tx, event: ConsumedEvent): Promise<void> {
+    const t = await tx
+      .selectFrom('stock_transfers')
+      .select(['status', sql<string | null>`receive_business_date::text`.as('day')])
+      .where('id', '=', event.aggregateId)
+      .executeTakeFirst();
+    if (!t || t.status !== 'received' || t.day === null) {
+      throw new Error(`stock transfer ${event.aggregateId} is not received`);
+    }
+    const filter = { sourceType: STOCK_TRANSFER_SOURCE, sourceId: event.aggregateId };
+    const out = await this.value(tx, { ...filter, movementType: 'transfer_out' });
+    // Every dispatch is valued (transfers postdate valuation), so this is a broken invariant.
+    if (!out) throw new Error(`stock transfer ${event.aggregateId} has no valued dispatch`);
+    const received = (await this.value(tx, { ...filter, movementType: 'transfer_in' }))?.cents ?? 0;
+    await this.post(tx, event, {
+      businessDate: t.day,
+      entryType: 'transfer_in',
+      sourceType: STOCK_TRANSFER_SOURCE,
+      sourceId: event.aggregateId,
+      description: 'Stock transfer received',
+      postings: transferInPostings({
+        receivedDeltaCents: received,
+        shortageCents: -out.cents - received,
+      }),
+    });
   }
 
   /**

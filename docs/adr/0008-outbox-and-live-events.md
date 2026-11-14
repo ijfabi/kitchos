@@ -17,5 +17,5 @@
 
 - The **outbox relay** (publishing to EventBridge/SQS or Redpanda, setting `published_at`) and the
   first asynchronous consumers (accounting postings, analytics projections). The per-store
-  sequence serialises event production per restaurant — acceptable for one store's throughput,
+  sequence serialises event production per restaurant. That is acceptable for one store's throughput,
   to be measured under load (Phase 9).

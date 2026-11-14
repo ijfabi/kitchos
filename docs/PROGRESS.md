@@ -1,6 +1,80 @@
 # Progress log
 
-## Milestone 18 — Shifts and shift close across drawers and people (2026-11-12)
+## Milestone 19: Stock transfers between restaurants (2026-11-14)
+
+### Implemented (design decision: ADR-0019)
+
+- **Dispatch and receipt:** the sender records what it sends (`transfer_out` at its default
+  location). The receiver then records, once, what arrived for every line, from nothing up to what
+  was sent (`transfer_in`). Anything less is a shortage, and more than was sent is refused.
+  - Endpoints under `/v1/restaurants/:id/inventory/transfers`: list (incoming or outgoing), get,
+    dispatch and receive; `…/inventory/transfer-destinations` lists the other active restaurants of the organisation.
+  - Both sides need `inventory.adjust` at their own restaurant only. A transfer is visible only to
+    the two restaurants on it.
+  - Under the `block` shortage policy a dispatch may not take stock below what is reserved.
+- **Valuation:** a `transfer_in` is valued by the stock-ledger trigger at the unit cost of the same
+  item's dispatch, so arrival moves exactly the value that left, whatever the standard cost did.
+- **Journal:** new accounts 1210 Stock in transit and 5300 Transfer shortage. The sender posts Dr
+  Stock in transit / Cr Inventory; the receiver posts Dr Inventory and Dr Transfer shortage / Cr
+  Stock in transit. Both restaurants' Inventory still reconciles to their stock ledgers by day, and
+  day close shows `transferShortageCents`.
+- **Database:** migration `0013_stock_transfers` (tables, RLS, column-level grants, triggers that
+  allow only one change, from in transit to received, and no deletes). Migration
+  `0014_stock_transfer_receipt_guard` was added after review: the triggers now also refuse a
+  received transfer with an unrecorded line, and any line recorded after receipt.
+- **Screen:** a Transfers tab on the inventory screen to send stock and receive what arrives.
+
+### Independent review and testing (subagents)
+
+The reviewer read the migration, service, controller, valuation trigger, poster, ledger and day
+close end to end. It found no critical, high or medium defects. The low findings:
+
+- **Fixed:** the database did not itself keep a receipt whole (migration 0014, above). The new test
+  was mutation-checked: removing either new trigger clause makes it fail.
+- **Fixed:** the receiver's single Stock in transit credit kept the memo "Stock received by
+  transfer" even when it included the shortage. It now reads "Transfer cleared: received and
+  short" (domain test added).
+- **Recorded as R-042:** the transfer list loads each transfer with three queries.
+- **Already recorded as R-041:** no cancel or return, and nothing reports transfers left in
+  transit.
+
+The tester added `stock-transfers-interactions.test.ts` (7 tests, all pass; no product defect).
+Each test checks persisted rows, journal lines and balances:
+
+- day close at the sender while goods are in transit, and at the receiver before the receipt;
+- a receipt that lands after the receiver's day closed posts to the next open day, flagged late;
+- transfers are not cost of sales in the food cost or menu item reports;
+- dispatch racing a stock count and a waste record on the same items (4 rounds, no deadlock);
+- dispatch racing order reservations under the block policy (4 rounds, never oversold);
+- attribution, audit rows and event versions;
+- every trial balance stays balanced, and org-wide Stock in transit equals the open dispatches.
+
+Not tested: a receipt that truly commits across midnight (simulated by backdating), restaurants in
+different time zones, and a transfer in transit when either restaurant is deactivated.
+
+### Tests executed (14 November 2026, Windows 11, Docker Desktop)
+
+| Suite                      | Result                                                            |
+| -------------------------- | ----------------------------------------------------------------- |
+| `@kitchos/domain`          | 63/63 passed                                                      |
+| `@kitchos/api` integration | 507/507 passed (33 files, shuffled, seed `1794652460414`)         |
+| Transfer suites alone      | 8 + 17 + 7 passed                                                 |
+| Playwright (15 journeys)   | 12 passed, 3 failed on reused local data (below); transfer passed |
+| ESLint / Prettier / tsc    | clean                                                             |
+
+The three Playwright failures (the waste journey in `inventory.spec.ts`, and the order and refund
+journeys in `order-journey.spec.ts`) each found two orders with the same daily number. The local
+database held journey orders from 12 November, for example a cancelled `#1` beside the new `#1`. They
+do not touch transfer code. They were not rerun on a fresh database before this commit, because
+`pnpm db:reset` erases the local data; that rerun follows the commit. `next build` was not run this time.
+
+### Not done
+
+- Cancel and return of a transfer, an open-transfer report and a check of the transit balance
+  against open dispatches (R-041).
+- Transfer shortages in actual food cost (ADR-0019).
+
+## Milestone 18: Shifts and shift close across drawers and people (2026-11-12)
 
 ### Implemented (design decision: ADR-0018)
 
@@ -104,7 +178,7 @@ Full-suite runs, in order:
   and day).
 - A shift report export, and shift targets or labour figures.
 
-## Milestone 17 — Food cost per menu item and category (2026-11-12)
+## Milestone 17: Food cost per menu item and category (2026-11-12)
 
 ### Implemented
 
@@ -181,7 +255,7 @@ completed and verified here.
 - CSV/PDF export of reports.
 - Food cost per category as a menu's categories stood at the time of sale (D-024 chose the newest).
 
-## Milestone 16 — Recipe cost of sales (theoretical food cost) (2026-11-10)
+## Milestone 16: Recipe cost of sales (theoretical food cost) (2026-11-10)
 
 ### Implemented
 
@@ -242,7 +316,7 @@ The tester's other 30 scenarios held against figures computed from source rows. 
 
 - Food cost per menu item or category.
 
-## Milestone 15 — Refunds by item, and live figures for managers (2026-11-10)
+## Milestone 15: Refunds by item, and live figures for managers (2026-11-10)
 
 ### Implemented (decisions by the product owner)
 
@@ -318,7 +392,7 @@ The tester's other 15 scenarios held. They covered:
 - Replace does not send a kitchen ticket, and meals cannot be replaced as a whole.
 - R-036 and R-037.
 
-## Milestone 14 — Prepared food recorded as waste on cancel and refund (2026-11-10, verified 2026-11-10)
+## Milestone 14: Prepared food recorded as waste on cancel and refund (2026-11-10, verified 2026-11-10)
 
 ### Implemented (decisions by the product owner)
 
@@ -385,7 +459,7 @@ cost, and partial wastes left rounding cents in COGS. Both now net to exactly ze
   decision (full refunds only?).
 - R-034: no transfer of prepared food between orders.
 
-## Milestone 13 — Reconciliation per tender and per entry (2026-11-10)
+## Milestone 13: Reconciliation per tender and per entry (2026-11-10)
 
 ### Implemented
 
@@ -438,7 +512,7 @@ cost, and partial wastes left rounding cents in COGS. Both now net to exactly ze
   permission policy decision, left open.
 - Source matching for drawer entries (R-033).
 
-## Milestone 12 — Food cost and gross profit report (2026-11-10)
+## Milestone 12: Food cost and gross profit report (2026-11-10)
 
 ### Implemented
 
@@ -502,7 +576,7 @@ Accepted, not fixed: R-031 and R-032.
   with unsold production shown separately.
 - Discounts and comps as their own column; per-item or per-category breakdown; export.
 
-## Milestone 11 — Business-day close and drawer admin (2026-11-03, verified 2026-11-10)
+## Milestone 11: Business-day close and drawer admin (2026-11-03, verified 2026-11-10)
 
 ### Implemented
 
@@ -563,7 +637,7 @@ Accepted as risks: R-027, R-028, R-029 and R-030 (R-030 resolved in Milestone 13
 - Closing before the cutoff; reopening a closed day (corrections post on the day they are made).
 - A list of days still unclosed.
 
-## Milestone 10 — Inventory and waste UI (2026-11-02)
+## Milestone 10: Inventory and waste UI (2026-11-02)
 
 ### Implemented
 
@@ -639,7 +713,7 @@ pinned by a test), R-025 (crew see waste costs), R-026 (waste then normal consum
 - No supplier unit cost on the receipt form (stored by the API but not posted, R-022).
 - No Playwright coverage of remake, or of approving (as opposed to rejecting) waste.
 
-## Milestone 9 — Inventory valuation in the journal (2026-11-02)
+## Milestone 9: Inventory valuation in the journal (2026-11-02)
 
 ### Implemented
 
@@ -697,7 +771,7 @@ Defects found and fixed, each with a regression test:
 - Purchase price variance and supplier invoices (R-022), moving-average or FIFO costing, food cost
   and gross margin report, inventory and waste UI.
 
-## Milestone 8 — Cash drawers, till sessions and blind counts (2026-10-30)
+## Milestone 8: Cash drawers, till sessions and blind counts (2026-10-30)
 
 ### Implemented
 
@@ -785,7 +859,7 @@ The invariant itself is covered deterministically at the database level.
 - Cash per business date does not net to zero for sessions that cross midnight (ADR-0015).
 - Shift and business-day close, COGS/waste postings, split tender, gift cards.
 
-## Milestone 7 — Refunds and payment reversal (2026-10-27)
+## Milestone 7: Refunds and payment reversal (2026-10-27)
 
 ### Implemented
 
@@ -793,7 +867,7 @@ The invariant itself is covered deterministically at the database level.
   (method, amount, refunded-before, cash rounding, treatment, reason), `refund` journal entry
   type, Sales returns account (4200) in the default chart.
 - Domain: `refundPostings` (deposit release vs sales return) and `refundGstShare` (cumulative, so
-  partial refunds return exactly the order GST at full refund) — property-tested.
+  partial refunds return exactly the order GST at full refund), property-tested.
 - API: `POST /v1/restaurants/:id/orders/:orderId/refunds` (`payments.refund`, supervisor and up;
   idempotent; completed or cancelled orders only; order then payment locked; payment state
   machine; audit; `payment.refunded` event). Ledger consumer posts refunds; reconciliation now
@@ -843,7 +917,7 @@ The invariant itself is covered deterministically at the database level.
 Refund approval for crew (R-018), line-level returns for mixed GST orders (R-019), split tender,
 gift cards, till sessions, COGS/waste postings.
 
-## Milestone 6 — Double-entry journal fed by the event dispatcher (2026-10-27)
+## Milestone 6: Double-entry journal fed by the event dispatcher (2026-10-27)
 
 ### Implemented
 
@@ -854,7 +928,7 @@ gift cards, till sessions, COGS/waste postings.
   (source, entry type); `event_consumer_failures`; `app.orgs_with_pending_events` (definer
   function returning tenant ids only, PUBLIC execute revoked); dispatcher index.
 - Domain: `paymentReceiptPostings`, `saleRecognitionPostings` (deposits before handover; revenue,
-  discounts ex GST and GST at handover; cash rounding) — property-tested to balance and net to
+  discounts ex GST and GST at handover; cash rounding), property-tested to balance and net to
   total − GST.
 - API: `EventDispatcher` (per tenant inside `withTenant`; each attempt holds the outbox row lock,
   re-checks backoff, claims + handles inside a savepoint, forces deferred checks, records failures
@@ -891,11 +965,11 @@ gift cards, till sessions, COGS/waste postings.
 
 ### Not done
 
-COGS/waste postings, refunds/reversals (deposits of cancelled paid orders remain — R-016), till
+COGS/waste postings, refunds/reversals (deposits of cancelled paid orders remain: R-016), till
 sessions, shift close, period-close UI, dead-letter requeue (R-017), external bus relay.
 Migration 0006 was amended before ever being committed or deployed.
 
-## Milestone 5 — POS discounts and manager overrides (2026-10-27)
+## Milestone 5: POS discounts and manager overrides (2026-10-27)
 
 ### Implemented
 
@@ -904,7 +978,7 @@ Migration 0006 was amended before ever being committed or deployed.
   single-use secrets bound to restaurant, order, requester, expiry and the exact discount;
   approver ≠ requester enforced by CHECK; RLS and column-level grants.
 - Domain: `applyDiscount` (percent/amount, largest-remainder allocation across lines, GST on the
-  discounted taxable portion), `discountBasisPoints` — property-tested.
+  discounted taxable portion), `discountBasisPoints`, property-tested.
 - API: `POST /v1/restaurants/:id/orders/:orderId/discount` (`discount.apply`) with the
   self-approval policy; `POST /v1/restaurants/:id/overrides` for terminal re-authentication;
   fully discounted orders are accepted straight to the kitchen; `order.discounted` event;
@@ -947,7 +1021,7 @@ account-level throttling enables temporary approver lockout (R-014).
 - Migration 0005 was amended before it was ever committed or deployed (local DB reset); applied,
   released migrations remain immutable.
 
-## Milestone 4 — POS core: staff order entry, cash tender, park / recall / void (2026-10-27)
+## Milestone 4: POS core: staff order entry, cash tender, park / recall / void (2026-10-27)
 
 ### Implemented
 
@@ -972,7 +1046,7 @@ account-level throttling enables temporary approver lockout (R-014).
   and shows the completed sale instead of inviting a second tender; the POS shows the rounded
   cash due and bases quick tenders on it. Also fixed: stale cash state on recall, Enter-key
   double submit guard, float-free tender formatting.
-- **Adversarial testing** (`test/pos-adversarial.test.ts`, 12 scenarios): found a genuine defect —
+- **Adversarial testing** (`test/pos-adversarial.test.ts`, 12 scenarios): found a genuine defect:
   replaying a staff payment's idempotency key through **another restaurant's route** returned that
   restaurant's order (200) because the replay happened before the restaurant check. Fixed by
   scoping payment keys per surface and restaurant; the test is kept as a regression and
@@ -998,7 +1072,7 @@ account-level throttling enables temporary approver lockout (R-014).
 Discounts, coupons, manager overrides, staff/comp meals, receipt printing, refunds (need the
 journal), till/drawer sessions, drive-thru order recall on the POS (list filters `pos`).
 
-## Milestone 3 — Waste, receiving and counts without double deduction (2026-10-26)
+## Milestone 3: Waste, receiving and counts without double deduction (2026-10-26)
 
 ### Implemented
 
@@ -1006,7 +1080,7 @@ journal), till/drawer sessions, drive-thru order recall on the POS (list filters
   per-restaurant approval thresholds, `waste_records` + append-only `waste_record_lines`
   (treatment per ingredient), append-only goods receipts and stock counts; RLS and
   least-privilege grants (only review columns of a waste record are updatable).
-- `InventoryService.recordMovements` — the single locked, idempotent path for all ledger writes
+- `InventoryService.recordMovements`: the single locked, idempotent path for all ledger writes
   (consumption refactored onto it with no behaviour change: 21/21 still passing).
 - Waste API: raw and prepared waste, order-line-linked waste using the immutable ingredient
   snapshot, remakes, overproduction waste from the pinned recipe, approval/rejection with
@@ -1032,14 +1106,14 @@ test, remake test, summary split).
 
 - Integration tests had a hidden cross-file dependency (a count zeroed patties used by other
   files); exposed when Vitest reordered files. Fixed, and file order is now shuffled every run.
-- A mutation edit using `//` silently broke compilation and reported "no tests" — a reminder to
+- A mutation edit using `//` silently broke compilation and reported "no tests", a reminder to
   confirm a mutation run actually executes tests before trusting it.
 
 ### Next
 
 Inventory/waste UI for managers and crew; POS; outbox relay + journal postings.
 
-## Milestone 2 — Customer, kitchen, expo and pickup UI on the live API (2026-10-26)
+## Milestone 2: Customer, kitchen, expo and pickup UI on the live API (2026-10-26)
 
 ### Implemented
 
@@ -1074,7 +1148,7 @@ Inventory/waste UI for managers and crew; POS; outbox relay + journal postings.
 E2E not yet in CI; no POS; staff session in `sessionStorage` (device identity pending);
 kitchen ageing thresholds are display constants, not per-restaurant configuration.
 
-## Milestone 1 — Foundation + first verified vertical slice (2026-10-26)
+## Milestone 1: Foundation + first verified vertical slice (2026-10-26)
 
 ### Implemented
 
@@ -1105,7 +1179,7 @@ kitchen ageing thresholds are display constants, not per-restaurant configuratio
 | ESLint / Prettier / tsc (4 packages)    | clean        |
 
 Mutation check: removing the balance-row `FOR UPDATE` in `reserve()` makes the dedicated
-concurrency test fail (6/6 reservations succeed against 2 units) — the test has teeth.
+concurrency test fail (6/6 reservations succeed against 2 units), so the test has teeth.
 
 ### Findings
 

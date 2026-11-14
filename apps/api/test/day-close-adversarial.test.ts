@@ -1898,6 +1898,7 @@ describe('business-day close and drawer administration (adversarial)', () => {
         cogsCents: -(await movementValue('production_consumption')),
         wasteCents: -(await movementValue('waste_raw')),
         stockVarianceCents: -(await movementValue('count_adjustment')),
+        transferShortageCents: 0, // this day has no transfers
         cashOverShortCents: 150,
         pettyCashCents: 300,
       });

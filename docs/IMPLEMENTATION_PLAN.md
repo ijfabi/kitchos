@@ -3,7 +3,7 @@
 Each milestone ends with working, verified functionality (real persistence, tests, docs). Status
 key: ✅ done · 🟡 in progress / partial · ⬜ not started.
 
-## Phase 0 — Foundation 🟡
+## Phase 0: Foundation 🟡
 
 | Item                                                           | Status |
 | -------------------------------------------------------------- | ------ |
@@ -15,13 +15,13 @@ key: ✅ done · 🟡 in progress / partial · ⬜ not started.
 | Structured logging (pino), request ids, Prometheus `/metrics`  | ✅     |
 | Health/readiness endpoints                                     | ✅     |
 | Seed: 3 demo restaurants + isolation-test tenant               | ✅     |
-| ADRs 0001–0010, architecture overview                          | ✅     |
+| ADRs 0001 to 0010, architecture overview                       | ✅     |
 | GitHub Actions CI (lint, typecheck, unit, integration)         | ✅     |
 | OpenTelemetry tracing (OTLP exporter, opt-in)                  | ⬜     |
 | Terraform reference stack (plan only, no apply)                | ⬜     |
 | API container image + production build (tsup)                  | ⬜     |
 
-## Phase 1 — Core order processing 🟡
+## Phase 1: Core order processing 🟡
 
 | Item                                                                 | Status |
 | -------------------------------------------------------------------- | ------ |
@@ -40,7 +40,7 @@ key: ✅ done · 🟡 in progress / partial · ⬜ not started.
 | POS: cash drawers, till sessions, blind counts (Milestone 8)         | ✅     |
 | Playwright E2E for the customer → kitchen → pickup journey           | ✅     |
 
-## Phase 2 — Inventory 🟡
+## Phase 2: Inventory 🟡
 
 Done: append-only ledger, balance projection, reservations, configurable consumption point,
 exactly-once consumption, shortage policies, reconciliation query.
@@ -49,17 +49,19 @@ threshold + reversal, waste summary, direct goods receipts, physical counts with
 approval, standard-cost valuation.
 Done (Milestone 10): inventory and waste UI for crew and managers; waste capped cumulatively per
 order line; stock balances bounded to the range the system can read back.
-Next: transfers between stores, lots & expiry, unit conversions, moving-
+Done (Milestone 19): transfers between restaurants with receipt, shortage and journal postings
+through Stock in transit (ADR-0019).
+Next: transfer cancel/return and open-transfer reporting, lots & expiry, unit conversions, moving-
 average valuation, batch production, low-stock alerts, theoretical vs actual usage report.
 
-## Phase 3 — Finance and management 🟡
+## Phase 3: Finance and management 🟡
 
 Done (Milestone 6): in-process event dispatcher; double-entry journal with DB-enforced balance,
 append-only and closed-period rules; payment and sale-recognition postings; trial balance,
 journal and reconciliation views (Books screen).
 Done (Milestone 7): refunds and payment reversal. Done (Milestone 8): cash drawers and till
 sessions with blind counts, variance approval and drawer postings (ADR-0015). Done (Milestone 9):
-inventory valuation postings — COGS, waste and reclassification, receipts, counts, opening stock —
+inventory valuation postings (COGS, waste and reclassification, receipts, counts, opening stock)
 with the stock ledger reconciled to the Inventory account (ADR-0016). Done (Milestone 11):
 business-day close, drawer admin and retry of failed postings (ADR-0017). Done (Milestone 12):
 food cost and gross profit report from the journal. Done (Milestone 13): reconciliation per
@@ -74,35 +76,35 @@ Double-entry journal (immutable, balanced, reversals), posting rules from outbox
 idempotent consumer, refunds and payment reversal, cash drawers and till sessions, shift and
 business-day close with blind counts, reports + PDF/CSV export, manager dashboards on real data.
 
-## Phase 4 — Restaurant operations ⬜
+## Phase 4: Restaurant operations ⬜
 
 Kiosk (device auth, idle reset, i18n), drive-thru lanes and simulator, beverage/dessert/expo
 flows, time & attendance (clock on/off, breaks, offline punches), rostering, payroll simulation.
 
-## Phase 5 — Supply chain and safety ⬜
+## Phase 5: Supply chain and safety ⬜
 
 Suppliers, purchase orders and approvals, partial receipts, invoice matching, transfers,
 replenishment recommendations, lots/traceability, recalls, temperature logs, checklists.
 
-## Phase 6 — Distributed reliability ⬜
+## Phase 6: Distributed reliability ⬜
 
 Store-edge runtime (local PostgreSQL/SQLite, single writer), outbox relay and sync engine,
 cursors, conflict detection, replay protection, dead letters, fault-injection tests.
 
-## Phase 7 — Enterprise expansion ⬜
+## Phase 7: Enterprise expansion ⬜
 
 Head-office rollouts, multi-store reporting, signage, campaigns, loyalty ledger, maintenance.
 
-## Phase 8 — Intelligent operations ⬜
+## Phase 8: Intelligent operations ⬜
 
 Digital twin on real APIs (seeded scenarios), forecasting with explicit baselines and evaluation.
 
-## Phase 9 — Hardening ⬜
+## Phase 9: Hardening ⬜
 
 Security review (OWASP ASVS L2 checklist), k6 load tests with documented hardware/workload,
 reliability drills, deployment docs, measured benchmark report.
 
 ## Immediate next tasks
 
-1. Transfers between restaurants, lots and expiry, unit conversions (Phase 2).
+1. Lots and expiry, unit conversions; transfer cancel/return and open-transfer report (Phase 2).
 2. CSV export of the food cost and menu item reports (Phase 3 "reports + PDF/CSV export").

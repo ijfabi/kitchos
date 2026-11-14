@@ -1,4 +1,4 @@
-# Threat model (initial — Phase 0/1 scope)
+# Threat model (initial, Phase 0/1 scope)
 
 Method: STRIDE over the implemented trust boundaries. Updated as features land.
 

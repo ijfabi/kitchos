@@ -36,6 +36,8 @@ const MOVEMENT_LABEL: Record<string, string> = {
   waste_raw: 'Waste',
   waste_prepared: 'Waste',
   count_adjustment: 'Count adjustment',
+  transfer_out: 'Sent to another restaurant',
+  transfer_in: 'Received by transfer',
   correction: 'Correction',
 };
 

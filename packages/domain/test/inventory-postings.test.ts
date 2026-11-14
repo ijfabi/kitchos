@@ -4,6 +4,8 @@ import {
   consumptionPostings,
   countPostings,
   receiptPostings,
+  transferInPostings,
+  transferOutPostings,
   wastePostings,
   wasteReversalPostings,
 } from '../src/inventory-postings.ts';
@@ -44,6 +46,58 @@ describe('inventory postings', () => {
       ['inventory', 90],
       ['stock_variance', -90],
     ]);
+  });
+
+  it('a dispatch moves value into transit; a receipt clears transit into inventory and shortage', () => {
+    expect(shape(transferOutPostings(-1_250))).toEqual([
+      ['inventory', -1_250],
+      ['stock_in_transit', 1_250],
+    ]);
+    expect(() => transferOutPostings(1)).toThrow(/cannot add stock/);
+    expect(shape(transferInPostings({ receivedDeltaCents: 1_000, shortageCents: 250 }))).toEqual([
+      ['inventory', 1_000],
+      ['stock_in_transit', -1_250],
+      ['transfer_shortage', 250],
+    ]);
+    // The single transit credit says it covers the shortage too.
+    const transit = (p: ReturnType<typeof transferInPostings>) =>
+      p.find((l) => l.account === 'stock_in_transit')?.memo;
+    expect(transit(transferInPostings({ receivedDeltaCents: 1_000, shortageCents: 250 }))).toBe(
+      'Transfer cleared: received and short',
+    );
+    expect(transit(transferInPostings({ receivedDeltaCents: 1_000, shortageCents: 0 }))).toBe(
+      'Transfer cleared',
+    );
+    // Nothing arrived: the whole dispatch is a shortage.
+    expect(shape(transferInPostings({ receivedDeltaCents: 0, shortageCents: 400 }))).toEqual([
+      ['stock_in_transit', -400],
+      ['transfer_shortage', 400],
+    ]);
+    expect(transferInPostings({ receivedDeltaCents: 0, shortageCents: 0 })).toEqual([]);
+    expect(() => transferInPostings({ receivedDeltaCents: -1, shortageCents: 0 })).toThrow(
+      /cannot remove stock/,
+    );
+    expect(() => transferInPostings({ receivedDeltaCents: 0, shortageCents: -1 })).toThrow(
+      /cannot remove stock/,
+    );
+  });
+
+  it('a received transfer always leaves nothing in transit', () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 0, max: 1_000_000 }),
+        fc.integer({ min: 0, max: 1_000_000 }),
+        (received, short) => {
+          const all = [
+            ...transferOutPostings(-(received + short)),
+            ...transferInPostings({ receivedDeltaCents: received, shortageCents: short }),
+          ];
+          expect(net(all, 'stock_in_transit')).toBe(0);
+          expect(net(all, 'inventory')).toBe(0 - short);
+          expect(net(all, 'transfer_shortage')).toBe(short);
+        },
+      ),
+    );
   });
 
   it('waste of already-consumed food is reclassified out of COGS, never added twice', () => {

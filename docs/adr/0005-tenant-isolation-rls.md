@@ -25,6 +25,6 @@
 ## Consequences
 
 - Defence in depth: an application bug that forgets a `WHERE org_id` cannot read another tenant.
-- Background workers that process all tenants (outbox relay) need an explicit design — either
+- Background workers that process all tenants (outbox relay) need an explicit design: either
   per-tenant iteration or a dedicated worker role with audited `BYPASSRLS` (open question,
   RISKS R-004).

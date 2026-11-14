@@ -9,6 +9,7 @@ import {
   StockCountForm,
   StockLevels,
 } from '@/components/inventory/stock-operations';
+import { Transfers } from '@/components/inventory/transfers';
 import { WasteEntry } from '@/components/inventory/waste-entry';
 import { WasteReview } from '@/components/inventory/waste-review';
 import { StaffGate } from '@/components/staff-gate';
@@ -19,7 +20,7 @@ export default function InventoryPage() {
   return <StaffGate>{(session) => <Inventory session={session} />}</StaffGate>;
 }
 
-type Tab = 'record' | 'review' | 'stock' | 'receive' | 'count';
+type Tab = 'record' | 'review' | 'stock' | 'receive' | 'count' | 'transfers';
 
 function Inventory({ session }: { session: StaffSession }) {
   const { restaurantId } = useParams<{ restaurantId: string }>();
@@ -37,6 +38,7 @@ function Inventory({ session }: { session: StaffSession }) {
       ? ([
           ['receive', 'Receive goods'],
           ['count', 'Stock count'],
+          ['transfers', 'Transfers'],
         ] as [Tab, string][])
       : []),
   ];
@@ -97,6 +99,7 @@ function Inventory({ session }: { session: StaffSession }) {
             {tab === 'stock' && <StockLevels restaurantId={restaurantId} token={token} />}
             {tab === 'receive' && <GoodsReceiptForm restaurantId={restaurantId} token={token} />}
             {tab === 'count' && <StockCountForm restaurantId={restaurantId} token={token} />}
+            {tab === 'transfers' && <Transfers restaurantId={restaurantId} token={token} />}
           </>
         )}
       </main>

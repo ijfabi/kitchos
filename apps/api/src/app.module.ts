@@ -31,6 +31,8 @@ import { InventoryController } from './inventory/inventory.controller.ts';
 import { InventoryService } from './inventory/inventory.service.ts';
 import { StockOperationsController } from './inventory/stock-operations.controller.ts';
 import { StockOperationsService } from './inventory/stock-operations.service.ts';
+import { StockTransferController } from './inventory/stock-transfer.controller.ts';
+import { StockTransferService } from './inventory/stock-transfer.service.ts';
 import { KitchenController } from './kitchen/kitchen.controller.ts';
 import { KitchenService } from './kitchen/kitchen.service.ts';
 import { PublicOrdersController } from './ordering/public-orders.controller.ts';
@@ -67,6 +69,7 @@ export class AppModule {
         KitchenController,
         InventoryController,
         StockOperationsController,
+        StockTransferController,
         LiveEventsController,
         AccountingController,
         DayCloseController,
@@ -87,6 +90,7 @@ export class AppModule {
         MenuRepository,
         InventoryService,
         StockOperationsService,
+        StockTransferService,
         KitchenService,
         OrdersService,
         DiscountsService,

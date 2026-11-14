@@ -18,7 +18,7 @@ stock (invariant 11), and must post correctly whether or not revenue was already
   and then the payment row are locked, so concurrent refunds serialise.
 - Refunds are allowed only once an order is finished: **completed** (handed over) or
   **cancelled**. The accounting **treatment is fixed at creation**:
-  - `deposit_release` (cancelled): Dr Customer deposits / Cr Card clearing or Cash — clears the
+  - `deposit_release` (cancelled): Dr Customer deposits / Cr Card clearing or Cash, which clears the
     liability left by a cancelled paid order (RISKS R-016);
   - `sales_return` (completed): Dr Sales returns (ex GST) + Dr GST payable / Cr Card clearing or
     Cash. The GST share is computed **cumulatively** (GST of refunded-so-far-including-this minus

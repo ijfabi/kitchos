@@ -28,7 +28,7 @@ logging the crew member out of the terminal.
   to restaurant, action, order, requesting user, a 2-minute expiry **and the exact discount**
   (kind, value, reason). The server computes the resulting amount when granting, returns it so
   the approver sees what they authorise, and records it in the audit. Using the override
-  requires an identical discount — approval for 15% can never authorise a comp, and a different
+  requires an identical discount: approval for 15% can never authorise a comp, and a different
   (even smaller) discount needs a new approval. Approver ≠ requester is a database CHECK.
   Consumption is a conditional UPDATE (unconsumed, unexpired, matching) inside the discount
   transaction, so a failed discount does not burn the override.
@@ -37,7 +37,7 @@ logging the crew member out of the terminal.
   not count, so busy approvers are not locked out; all attempts count against a per-IP ceiling.
   Denied overrides are audited (`override.denied`) with the attempted approver and discount.
 - **Zero-total orders** (100% comps) are accepted immediately and released to the kitchen with no
-  payment row; stock is consumed exactly as for a paid order — the financial classification
+  payment row; stock is consumed exactly as for a paid order, and the financial classification
   (comp/staff meal) lives on the discount, not the inventory ledger.
 
 ## Consequences

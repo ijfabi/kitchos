@@ -19,7 +19,9 @@ export type SystemAccount =
   | 'waste_expense'
   | 'stock_variance'
   | 'goods_received_not_invoiced'
-  | 'opening_balance_equity';
+  | 'opening_balance_equity'
+  | 'stock_in_transit'
+  | 'transfer_shortage';
 
 export interface Posting {
   readonly account: SystemAccount;
