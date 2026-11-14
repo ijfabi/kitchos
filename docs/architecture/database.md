@@ -26,22 +26,24 @@ Background work that has to find tenants first (the event dispatcher) does so th
 
 ## Migrations
 
-| File                                | Adds                                                                                                                      |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `0001_foundation`                   | Tenancy, identity, catalog, versioned menus and recipes, orders, kitchen, stock ledger, outbox, inbox, idempotency, audit |
-| `0002_runtime_grants`               | Least-privilege grants for `kitchos_app`                                                                                  |
-| `0003_inventory_operations`         | Waste, goods receipts, physical counts, standard costs                                                                    |
-| `0004_pos_cash_payments`            | Cash tender, change and rounding                                                                                          |
-| `0005_discounts_and_overrides`      | Order discounts, manager overrides                                                                                        |
-| `0006_ledger`                       | Chart of accounts, accounting periods, journal, consumer failures                                                         |
-| `0007_refunds`                      | Refunds and payment reversal                                                                                              |
-| `0008_cash_drawers`                 | Cash drawers, till sessions, drawer movements, blind counts                                                               |
-| `0009_inventory_valuation`          | Value on every stock movement, inventory accounts and entry types                                                         |
-| `0010_business_day_close`           | Business-day close, drawer administration, closed-day guard                                                               |
-| `0011_item_refunds`                 | Refund lines (refunds by item)                                                                                            |
-| `0012_shifts`                       | Shifts and shift stamping                                                                                                 |
-| `0013_stock_transfers`              | Stock transfers (Milestone 19)                                                                                            |
-| `0014_stock_transfer_receipt_guard` | Triggers keep a transfer receipt whole: every line recorded, none changed after (Milestone 19)                            |
+| File                                  | Adds                                                                                                                      |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `0001_foundation`                     | Tenancy, identity, catalog, versioned menus and recipes, orders, kitchen, stock ledger, outbox, inbox, idempotency, audit |
+| `0002_runtime_grants`                 | Least-privilege grants for `kitchos_app`                                                                                  |
+| `0003_inventory_operations`           | Waste, goods receipts, physical counts, standard costs                                                                    |
+| `0004_pos_cash_payments`              | Cash tender, change and rounding                                                                                          |
+| `0005_discounts_and_overrides`        | Order discounts, manager overrides                                                                                        |
+| `0006_ledger`                         | Chart of accounts, accounting periods, journal, consumer failures                                                         |
+| `0007_refunds`                        | Refunds and payment reversal                                                                                              |
+| `0008_cash_drawers`                   | Cash drawers, till sessions, drawer movements, blind counts                                                               |
+| `0009_inventory_valuation`            | Value on every stock movement, inventory accounts and entry types                                                         |
+| `0010_business_day_close`             | Business-day close, drawer administration, closed-day guard                                                               |
+| `0011_item_refunds`                   | Refund lines (refunds by item)                                                                                            |
+| `0012_shifts`                         | Shifts and shift stamping                                                                                                 |
+| `0013_stock_transfers`                | Stock transfers (Milestone 19)                                                                                            |
+| `0014_stock_transfer_receipt_guard`   | Triggers keep a transfer receipt whole: every line recorded, none changed after (Milestone 19)                            |
+| `0015_stock_transfer_cancel`          | Cancelling a transfer in transit: status, cancel columns, return valued at the dispatch cost (Milestone 20)               |
+| `0016_stock_transfer_guard_and_index` | Line guard names a cancelled transfer correctly; index for the transit reconciliation (Milestone 20)                      |
 
 ## Core relationships
 

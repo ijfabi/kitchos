@@ -11,6 +11,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import {
+  CancelTransferRequestSchema,
   ReceiveTransferRequestSchema,
   StockTransferRequestSchema,
   type StockTransferView,
@@ -26,13 +27,14 @@ import { StockTransferService } from './stock-transfer.service.ts';
 
 const ListQuery = z.object({
   direction: z.enum(['incoming', 'outgoing']),
-  status: z.enum(['in_transit', 'received']).optional(),
+  status: z.enum(['in_transit', 'received', 'cancelled']).optional(),
   limit: z.coerce.number().int().min(1).max(200).default(50),
 });
 
 /**
- * Stock transfers (ADR-0019). Sending and receiving each need `inventory.adjust` at the
- * restaurant doing it; the other side needs no access to the sender's restaurant.
+ * Stock transfers (ADR-0019, ADR-0020). Sending, receiving and cancelling each need
+ * `inventory.adjust` at the restaurant doing it; the other side needs no access to the
+ * sender's restaurant. Only the sender cancels, and only before the transfer is received.
  */
 @Controller('v1/restaurants/:restaurantId/inventory')
 @UseGuards(StaffAuthGuard)
@@ -100,6 +102,28 @@ export class StockTransferController {
     @Res({ passthrough: true }) res: Response,
   ): Promise<StockTransferView> {
     const result = await this.transfers.receive(
+      { orgId: p.orgId, restaurantId, userId: p.userId },
+      transferId,
+      body,
+      requireIdempotencyKey(key),
+    );
+    res.status(result.status);
+    if (result.replayed) res.setHeader('Idempotent-Replayed', 'true');
+    return result.body;
+  }
+
+  @Post('transfers/:transferId/cancel')
+  @RequirePermission('inventory.adjust')
+  async cancel(
+    @Param('restaurantId', UuidParam) restaurantId: string,
+    @Param('transferId', UuidParam) transferId: string,
+    @Body(new ZodPipe(CancelTransferRequestSchema))
+    body: z.output<typeof CancelTransferRequestSchema>,
+    @Headers('idempotency-key') key: string | undefined,
+    @Principal() p: StaffPrincipal,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StockTransferView> {
+    const result = await this.transfers.cancel(
       { orgId: p.orgId, restaurantId, userId: p.userId },
       transferId,
       body,

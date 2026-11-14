@@ -162,6 +162,11 @@ function Books({ session }: { session: StaffSession }) {
                         rec.data.stockMovementsValueCents,
                         rec.data.journalInventoryCents,
                       ],
+                      [
+                        'Stock in transit (transfers)',
+                        rec.data.transitChangeCents,
+                        rec.data.journalStockInTransitCents,
+                      ],
                     ] as const
                   ).map(([label, source, posted]) => (
                     <div key={label} className="flex justify-between gap-2">

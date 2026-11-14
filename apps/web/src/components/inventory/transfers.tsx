@@ -1,6 +1,7 @@
 'use client';
 
 import type {
+  CancelTransferRequest,
   ReceiveTransferRequest,
   StockBalanceView,
   StockTransferRequest,
@@ -21,7 +22,7 @@ interface Props {
   token: string;
 }
 
-/** Stock transfers to and from other restaurants (ADR-0019). */
+/** Stock transfers to and from other restaurants (ADR-0019, ADR-0020). */
 export function Transfers(props: Props) {
   const { restaurantId, token } = props;
   const incoming = useQuery({
@@ -42,19 +43,32 @@ export function Transfers(props: Props) {
         signal,
       ),
   });
-  const waiting = incoming.data?.filter((t) => t.status === 'in_transit') ?? [];
+  // Everything still in transit, however old, so it can always be received or cancelled.
+  const open = (direction: 'incoming' | 'outgoing') => ({
+    queryKey: ['transfers', restaurantId, direction, 'in_transit'],
+    queryFn: ({ signal }: { signal: AbortSignal }) =>
+      get<StockTransferView[]>(
+        `/v1/restaurants/${restaurantId}/inventory/transfers?direction=${direction}&status=in_transit&limit=200`,
+        token,
+        signal,
+      ),
+  });
+  const arriving = useQuery(open('incoming'));
+  const sentOpen = useQuery(open('outgoing'));
+  const waiting = arriving.data ?? [];
+  const onItsWay = sentOpen.data ?? [];
   const history = [...(incoming.data ?? []), ...(outgoing.data ?? [])]
-    .filter((t) => !waiting.includes(t))
+    .filter((t) => t.status !== 'in_transit')
     .sort((a, b) => b.dispatchedAt.localeCompare(a.dispatchedAt));
 
   return (
     <div className="space-y-5">
       <section aria-label="Arriving">
         <h2 className="mb-2 font-bold">Arriving</h2>
-        {incoming.isPending ? (
+        {arriving.isPending ? (
           <Spinner label="Loading transfers" />
-        ) : incoming.isError ? (
-          <EmptyState title="Cannot load transfers" hint={incoming.error.message} />
+        ) : arriving.isError ? (
+          <EmptyState title="Cannot load transfers" hint={arriving.error.message} />
         ) : waiting.length === 0 ? (
           <EmptyState className="py-6" title="Nothing on its way here" />
         ) : (
@@ -65,6 +79,16 @@ export function Transfers(props: Props) {
           </div>
         )}
       </section>
+      {onItsWay.length > 0 && (
+        <section aria-label="On its way">
+          <h2 className="mb-2 font-bold">Sent, not yet received</h2>
+          <div className="space-y-3">
+            {onItsWay.map((t) => (
+              <CancelTransfer key={t.id} transfer={t} {...props} />
+            ))}
+          </div>
+        </section>
+      )}
       <SendTransfer {...props} />
       <section aria-label="Transfer history">
         <h2 className="mb-2 font-bold">Recent transfers</h2>
@@ -91,7 +115,7 @@ export function Transfers(props: Props) {
                     {out ? `To ${t.to.name}` : `From ${t.from.name}`}{' '}
                     <span className="text-ink-muted">
                       · {new Date(t.dispatchedAt).toLocaleString('en-AU')} ·{' '}
-                      {t.status === 'received' ? 'Received' : 'In transit'}
+                      {STATUS_LABEL[t.status]}
                     </span>
                   </span>
                   <span className="tabular-nums">
@@ -148,8 +172,11 @@ function ReceiveTransfer({
     },
     onError: (err) => {
       attempt.settle(err);
-      // Received elsewhere meanwhile: refresh so this card goes away.
-      if (err instanceof ApiError && err.code === 'TRANSFER_ALREADY_RECEIVED') {
+      // Received elsewhere or cancelled by the sender meanwhile: refresh so this card goes away.
+      if (
+        err instanceof ApiError &&
+        (err.code === 'TRANSFER_ALREADY_RECEIVED' || err.code === 'TRANSFER_CANCELLED')
+      ) {
         void qc.invalidateQueries({ queryKey: ['transfers', restaurantId] });
       }
     },
@@ -232,6 +259,121 @@ function ReceiveTransfer({
     </Card>
   );
 }
+
+/**
+ * The sender takes back a transfer that has not been received: the stock is back on its
+ * shelf at the value it left with. Once received, it can only be sent back as a new transfer.
+ */
+function CancelTransfer({
+  transfer,
+  restaurantId,
+  token,
+}: Props & { transfer: StockTransferView }) {
+  const qc = useQueryClient();
+  const attempt = useAttemptKey();
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState('');
+  const valid = reason.trim().length >= 3;
+
+  const submit = useMutation({
+    mutationFn: async (body: CancelTransferRequest) =>
+      (
+        await api<StockTransferView>(
+          `/v1/restaurants/${restaurantId}/inventory/transfers/${transfer.id}/cancel`,
+          { method: 'POST', token, body, idempotencyKey: attempt.keyFor(body) },
+        )
+      ).data,
+    onSuccess: () => {
+      attempt.settle();
+      void qc.invalidateQueries({ queryKey: ['transfers', restaurantId] });
+      void qc.invalidateQueries({ queryKey: ['balances', restaurantId] });
+      void qc.invalidateQueries({ queryKey: ['movements', restaurantId] });
+    },
+    onError: (err) => {
+      attempt.settle(err);
+      if (
+        err instanceof ApiError &&
+        (err.code === 'TRANSFER_ALREADY_RECEIVED' || err.code === 'TRANSFER_CANCELLED')
+      ) {
+        void qc.invalidateQueries({ queryKey: ['transfers', restaurantId] });
+      }
+    },
+  });
+
+  return (
+    <section aria-label={`Sent to ${transfer.to.name}`} data-testid="outgoing-transfer">
+      <Card className="p-4">
+        <p className="font-semibold">To {transfer.to.name}</p>
+        <p className="text-sm text-ink-muted">
+          Sent by {transfer.dispatchedBy} ·{' '}
+          {new Date(transfer.dispatchedAt).toLocaleString('en-AU')} · {money(transfer.sentCents)} in
+          transit
+          {transfer.notes ? ` · “${transfer.notes}”` : ''}
+        </p>
+        <ul className="mt-1 text-sm">
+          {transfer.lines.map((l) => (
+            <li key={l.inventoryItemId}>
+              {trimQuantity(l.quantitySent)} {l.baseUnit} {l.name}
+            </li>
+          ))}
+        </ul>
+        {!open ? (
+          <Button type="button" variant="secondary" className="mt-3" onClick={() => setOpen(true)}>
+            Cancel transfer
+          </Button>
+        ) : (
+          <form
+            aria-label={`Cancel transfer to ${transfer.to.name}`}
+            className="mt-3 space-y-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!valid || submit.isPending) return;
+              submit.mutate({ reason: reason.trim() });
+            }}
+          >
+            <p className="text-sm">
+              Only if the stock never left or has come back: it goes back on this restaurant&apos;s
+              shelf, and {transfer.to.name} can no longer receive it.
+            </p>
+            <label className="block text-sm">
+              <span className="font-medium">Reason</span>
+              <input
+                className={inputClass}
+                maxLength={500}
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+              />
+            </label>
+            {submit.isError && outcomeUnknown(submit.error) && (
+              <p role="alert" className="text-sm font-medium text-danger">
+                {OUTCOME_UNKNOWN_HINT}
+              </p>
+            )}
+            {submit.isError && (
+              <p role="alert" className="rounded-lg bg-danger-soft p-3 text-sm text-danger">
+                {submit.error.message}
+              </p>
+            )}
+            <div className="flex flex-wrap gap-2">
+              <Button type="submit" loading={submit.isPending} disabled={!valid}>
+                Cancel transfer and return stock
+              </Button>
+              <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
+                Keep it
+              </Button>
+            </div>
+          </form>
+        )}
+      </Card>
+    </section>
+  );
+}
+
+const STATUS_LABEL: Record<StockTransferView['status'], string> = {
+  in_transit: 'In transit',
+  received: 'Received',
+  cancelled: 'Cancelled',
+};
 
 interface SendLine {
   key: number;

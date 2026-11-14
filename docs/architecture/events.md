@@ -75,6 +75,7 @@ Emitted by the API (from `appendEvents` calls in `apps/api/src`):
 | `inventory.counted`                                          | Counts           | Stock count variance                                                            |
 | `inventory.opening_stock`                                    | Seed only        | Opening stock                                                                   |
 | `inventory.transfer_dispatched`, `.transfer_received`        | Transfers        | Stock in transit, transfer receipt and shortage                                 |
+| `inventory.transfer_cancelled`                               | Transfer cancel  | Stock in transit cleared back into the sender's Inventory                       |
 | `drawer.opened`, `drawer.movement_recorded`, `drawer.closed` | Cash drawers     | Float, paid in and out, safe drop, close                                        |
 | `business_day.closed`                                        | Day close        | Not consumed                                                                    |
 

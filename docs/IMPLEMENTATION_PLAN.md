@@ -51,7 +51,9 @@ Done (Milestone 10): inventory and waste UI for crew and managers; waste capped 
 order line; stock balances bounded to the range the system can read back.
 Done (Milestone 19): transfers between restaurants with receipt, shortage and journal postings
 through Stock in transit (ADR-0019).
-Next: transfer cancel/return and open-transfer reporting, lots & expiry, unit conversions, moving-
+Done (Milestone 20): cancelling a transfer in transit, stock returned at the
+dispatch cost, and Stock in transit in the daily reconciliation (ADR-0020).
+Next: ageing of transfers left in transit, lots & expiry, unit conversions, moving-
 average valuation, batch production, low-stock alerts, theoretical vs actual usage report.
 
 ## Phase 3: Finance and management 🟡
@@ -106,5 +108,5 @@ reliability drills, deployment docs, measured benchmark report.
 
 ## Immediate next tasks
 
-1. Lots and expiry, unit conversions; transfer cancel/return and open-transfer report (Phase 2).
+1. Lots and expiry, unit conversions; ageing of transfers left in transit (Phase 2).
 2. CSV export of the food cost and menu item reports (Phase 3 "reports + PDF/CSV export").

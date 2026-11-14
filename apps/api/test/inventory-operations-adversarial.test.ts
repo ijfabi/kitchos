@@ -1312,7 +1312,10 @@ describe('inventory operations under adversarial conditions', () => {
       ]);
     }
     expect(items.map((i) => i.inventoryItemId)).toContain(id);
-    expect(JSON.stringify(res.body)).not.toMatch(/onHand|reserved|available|cost|cents/i);
+    // Field names, not values: an item may be called anything (another file has "… COST").
+    expect(items.flatMap((i) => Object.keys(i)).join(' ')).not.toMatch(
+      /onHand|reserved|available|cost|cents/i,
+    );
     await fixtureMovement(id, '-0.001');
     const rivalItems = await h.owner
       .selectFrom('inventory_items')

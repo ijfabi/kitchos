@@ -11,13 +11,13 @@
 
 ## Current suites
 
-Counted on 14 November 2026, including the Milestone 19 files.
+Counted on 14 November 2026, including the Milestone 20 files.
 
-| Suite                      | Files | Tests | Last result                                                                                     |
-| -------------------------- | ----- | ----- | ----------------------------------------------------------------------------------------------- |
-| `@kitchos/domain`          | 12    | 63    | 63 passed                                                                                       |
-| `@kitchos/api` integration | 33    | 507   | 507 passed (one full shuffled run, seed `1794652460414`)                                        |
-| Playwright journeys        | 10    | 15    | 15 passed after `pnpm db:reset`, and again on a reused database once orders were selected by id |
+| Suite                      | Files | Tests | Last result                                              |
+| -------------------------- | ----- | ----- | -------------------------------------------------------- |
+| `@kitchos/domain`          | 12    | 64    | 64 passed                                                |
+| `@kitchos/api` integration | 35    | 521   | 521 passed (one full shuffled run, seed `1794654793912`) |
+| Playwright journeys        | 10    | 16    | 16 passed, on a local database reused across runs        |
 
 Earlier on 14 November, on a local database reused across days, three journeys failed (the
 `inventory.spec.ts` waste journey and two in `order-journey.spec.ts`). Order numbers restart each

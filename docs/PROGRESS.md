@@ -1,5 +1,88 @@
 # Progress log
 
+## Milestone 20: Cancelling a transfer in transit, and reconciling Stock in transit (2026-11-14)
+
+### Implemented (design decision: ADR-0020)
+
+- **Cancel:** `POST /v1/restaurants/:id/inventory/transfers/:transferId/cancel` with a reason (3 to
+  500 characters) and an idempotency key. Only the sending restaurant, with `inventory.adjust`, and
+  only while the transfer is in transit. The receiver and any other restaurant get 404.
+  - Every line comes back to the shelf it left as `return_to_stock`, valued by the stock-ledger
+    trigger at the dispatch's unit cost.
+  - Event `inventory.transfer_cancelled` posts a `transfer_cancel` entry at the sender: Dr
+    Inventory / Cr Stock in transit, on the cancel's business day.
+  - Cancel and receipt lock the same transfer row; whichever comes second gets 409
+    (`TRANSFER_CANCELLED` or `TRANSFER_ALREADY_RECEIVED`).
+- **Reconciliation:** each restaurant's daily reconciliation has a Stock in transit line: value
+  dispatched, less value returned by cancels, less the dispatched value of transfers received that
+  day, against the journal's net change. It counts towards `reconciled`, so day close checks it. The
+  Books screen shows it.
+- **Database:** migration `0015_stock_transfer_cancel` (status, cancel columns with an all-or-none
+  check, the transfer guard allowing in transit to received or cancelled once, valuation of the
+  return, entry type, grants). Migration `0016_stock_transfer_guard_and_index`, added after review:
+  the line guard names a cancelled transfer correctly, and an index serves the reconciliation.
+- **Screen:** the Transfers tab lists what this restaurant sent that has not arrived, with a cancel
+  form that needs a reason. Cancelled transfers show in the history. Open transfers are loaded on
+  their own, so an old one does not drop out of view behind newer ones.
+- **Playwright selectors by id (before this milestone):** order cards, kitchen tickets, expo cards
+  and waste records carry `data-order-id`, and waste records return `orderId`. The journeys that
+  failed on a reused database (Milestone 19 notes) now pass on one.
+
+### Independent review and testing (subagents)
+
+The reviewer found no critical, high or medium defects. All three low findings were fixed:
+
+- the "Sent, not yet received" list only looked at the 20 newest transfers, so an older open one
+  could not be cancelled from the screen (the Arriving list had the same limit);
+- the line guard from 0014 called a cancelled transfer "received" in its error (0016);
+- the receiver half of the transit check scanned every transfer a restaurant had received (0016
+  index).
+
+The tester added `stock-transfer-cancel-adversarial.test.ts` (9 tests, all pass, no product
+defect):
+
+- cancel on a later day than the dispatch, both days reconciled and closed;
+- cancel after the dispatch day closed, and a cancel that posts late from a closed day;
+- 12 lines of fractional unit costs and huge quantities, every cost changed before the cancel:
+  each returned line is exactly the negated dispatch line;
+- racing cancels (6 rounds), and a key reused for another transfer (422);
+- cancel racing a new dispatch and orders under the block policy (5 rounds, no deadlock);
+- event redelivery posts once;
+- a mixed day at both ends (receipts, shortages, cancels, an open transfer) reconciles and closes;
+- negative stock under `allow_negative`, and a cancel refused at the balance range limit.
+
+Two behaviours it found are now written into ADR-0020: a cancel near the balance range limit is
+refused whole, and a late-posted cancel leaves the closed source day showing the same mismatch
+any late posting does.
+
+### Findings
+
+- Mutation checks on `stock-transfer-cancel.test.ts`: 4 mutants, all killed (return valued at
+  today's cost; any party to the transfer may cancel; reconciliation ignores cancels; a cancel
+  allowed with lines recorded as arrived).
+- The first full run failed two older tests. Neither was a product fault:
+  - `inventory-concurrency.test.ts` asserted that no `return_to_stock` movement existed anywhere;
+    cancels now make them legitimately. It now excludes stock transfers.
+  - `inventory-operations-adversarial.test.ts` searched the whole response for "cost", and an item
+    created by the Milestone 19 adversarial file is called "Adversarial COST". It now checks field
+    names only. This one depended on file order and predates this milestone.
+
+### Tests executed (14 November 2026, Windows 11, Docker Desktop)
+
+| Suite                      | Result                                                      |
+| -------------------------- | ----------------------------------------------------------- |
+| `@kitchos/domain`          | 64/64 passed                                                |
+| `@kitchos/api` integration | 521/521 passed (35 files, shuffled, seed `1794654793912`)   |
+| Cancel suites alone        | 5 + 9 passed                                                |
+| Playwright (16 journeys)   | 16/16 passed on a local database reused across earlier runs |
+| ESLint / Prettier / tsc    | clean                                                       |
+| `next build`               | succeeded                                                   |
+
+### Not done
+
+- Ageing of transfers left in transit and a warning at day close (R-041).
+- Partial cancel, and refusal by the receiver.
+
 ## Milestone 19: Stock transfers between restaurants (2026-11-14)
 
 ### Implemented (design decision: ADR-0019)

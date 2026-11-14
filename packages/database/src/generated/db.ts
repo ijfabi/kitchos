@@ -719,6 +719,10 @@ export interface StockTransferLines {
 }
 
 export interface StockTransfers {
+  cancel_business_date: string | null;
+  cancel_reason: string | null;
+  cancelled_at: Timestamp | null;
+  cancelled_by: string | null;
   dispatch_business_date: string;
   dispatched_at: Generated<Timestamp>;
   dispatched_by: string;

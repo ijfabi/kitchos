@@ -24,6 +24,7 @@ export type MovementType =
   | 'count_adjustment'
   | 'transfer_out'
   | 'transfer_in'
+  | 'return_to_stock'
   | 'correction';
 
 export interface MovementInput {

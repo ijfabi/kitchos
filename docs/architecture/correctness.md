@@ -74,7 +74,14 @@ sequenceDiagram
 
 Because arrival is valued at the dispatch's cost, Stock in transit clears exactly for every
 received transfer, even if the standard cost changed in between. It nets to zero across the
-organisation, not per restaurant, and transfers cannot yet be cancelled (R-041).
+organisation, not per restaurant.
+
+The sender can cancel a transfer that has not been received (ADR-0020). Its stock
+comes back as `return_to_stock` movements, also valued at the dispatch's cost, and the sender posts
+Dr Inventory / Cr Stock in transit, so a cancelled transfer leaves nothing in transit either. Cancel
+and receipt lock the same transfer row and both require it to be in transit, so only one happens.
+Each restaurant's daily reconciliation checks Stock in transit: the value it dispatched, less what
+its cancels returned, less the dispatched value of transfers it received, against the journal.
 
 ## Money
 
@@ -142,4 +149,4 @@ no further entries: anything late is posted to the next open day and marked.
 See [RISKS.md](../RISKS.md). The main ones: standard cost only, with no purchase price variance or
 payables (R-022); a movement written outside the application without its event is valued but never
 posted (R-023); reconciliation checks tender lines only inside receipt and refund entries (R-033);
-stock transfers cannot be cancelled and transit is not reported (R-041).
+transfers left in transit are not aged or flagged at day close (R-041).

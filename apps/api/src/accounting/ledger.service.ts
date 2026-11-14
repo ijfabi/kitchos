@@ -20,7 +20,8 @@ export interface EntryInput {
     | 'stock_count'
     | 'opening_stock'
     | 'transfer_out'
-    | 'transfer_in';
+    | 'transfer_in'
+    | 'transfer_cancel';
   sourceType: string;
   sourceId: string;
   sourceEventId: string | null;

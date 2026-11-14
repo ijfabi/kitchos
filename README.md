@@ -5,7 +5,7 @@ production, stock, cash handling and the books, in one system with one source of
 active development, built as vertical slices on real PostgreSQL persistence, with the important
 rules enforced by the database and checked by tests against persisted state.
 
-> **Status (November 2026):** 19 milestones committed. Ordering, POS, kitchen, inventory, cash
+> **Status (November 2026):** 20 milestones committed. Ordering, POS, kitchen, inventory, cash
 > drawers, shifts, a double-entry journal, business-day close and food cost reporting work end to
 > end. Workforce, purchasing, offline store operation and hosted deployment have not been started.
 > See the [feature matrix](docs/FEATURE_MATRIX.md) for the status of each capability with evidence.
@@ -43,7 +43,8 @@ persisted state, and documented. The [feature matrix](docs/FEATURE_MATRIX.md) li
 - **Inventory:** append-only ledger with a reconciled balance projection, configurable consumption
   point per recipe, waste with approval thresholds and reversal, goods receipts, physical counts,
   standard-cost valuation, and transfers between restaurants with receipt, shortage and postings
-  through a Stock in transit account (ADR-0019).
+  through a Stock in transit account (ADR-0019); the sender can cancel a transfer that has not
+  arrived, and Stock in transit is reconciled daily (ADR-0020).
 - **Cash:** drawers, till sessions, float, paid in and out, safe drops, blind counts and variance
   approval by someone independent; shifts across several drawers and people with an immutable
   close snapshot.
@@ -54,9 +55,8 @@ persisted state, and documented. The [feature matrix](docs/FEATURE_MATRIX.md) li
 ## Under development
 
 No milestone is in progress. The next items in the
-[implementation plan](docs/IMPLEMENTATION_PLAN.md) are cancelling and returning transfers with a
-report of transfers still in transit (R-041), lots and expiry, unit conversions, and CSV export of
-the food cost and menu item reports.
+[implementation plan](docs/IMPLEMENTATION_PLAN.md) are ageing of transfers left in transit
+(R-041), lots and expiry, unit conversions, and CSV export of the food cost and menu item reports.
 
 ## Planned
 

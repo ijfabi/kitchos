@@ -252,10 +252,12 @@ describe('inventory correctness under concurrency, retries and cancellation', ()
     // Invariant 11: refunds/cancellations never silently restore prepared stock.
     expect(await consumptionForOrder(h, order.id)).toHaveLength(8);
     expect(await balance(h, CENTRAL, 'BACON')).toEqual(baconAfterCook);
+    // Only a cancelled stock transfer returns stock (ADR-0020); nothing else ever does.
     const returns = await h.owner
       .selectFrom('stock_movements')
       .select('id')
       .where('movement_type', '=', 'return_to_stock')
+      .where('source_type', '<>', 'stock_transfer')
       .execute();
     expect(returns).toHaveLength(0);
 

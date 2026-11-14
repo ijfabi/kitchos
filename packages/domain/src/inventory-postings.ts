@@ -90,6 +90,17 @@ export function transferOutPostings(inventoryDeltaCents: number): Posting[] {
 }
 
 /**
+ * A transfer cancelled by its sender before it was received (ADR-0020): the stock is back on the
+ * sender's shelf at the dispatch's cost, Dr Inventory / Cr Stock in transit, clearing the dispatch.
+ */
+export function transferCancelPostings(returnedDeltaCents: number): Posting[] {
+  nonNegative(returnedDeltaCents, 'A cancelled transfer');
+  return toPostings(
+    moved(returnedDeltaCents, 'stock_in_transit', 'Transfer cancelled, stock returned'),
+  );
+}
+
+/**
  * A transfer received, at the receiver: what arrived moves Dr Inventory / Cr Stock in transit at
  * the dispatch's cost, and what was sent but did not arrive is written off, Dr Transfer shortage /
  * Cr Stock in transit. Together they clear the whole dispatched value out of transit.

@@ -4,6 +4,7 @@ import {
   consumptionPostings,
   countPostings,
   receiptPostings,
+  transferCancelPostings,
   transferInPostings,
   transferOutPostings,
   wastePostings,
@@ -53,6 +54,7 @@ interface MovementFilter {
  *   inventory.opening_stock    -> opening stock (Cr opening balance equity)
  *   inventory.transfer_dispatched -> stock into transit, at the sender (ADR-0019)
  *   inventory.transfer_received   -> transit cleared into inventory and shortage, at the receiver
+ *   inventory.transfer_cancelled  -> transit cleared back into inventory, at the sender (ADR-0020)
  */
 @Injectable()
 export class InventoryValuationPoster {
@@ -67,6 +69,7 @@ export class InventoryValuationPoster {
     'inventory.opening_stock',
     'inventory.transfer_dispatched',
     'inventory.transfer_received',
+    'inventory.transfer_cancelled',
   ] as const;
 
   constructor(@Inject(LedgerService) private readonly ledger: LedgerService) {}
@@ -128,6 +131,8 @@ export class InventoryValuationPoster {
         return this.transferDispatched(tx, event);
       case 'inventory.transfer_received':
         return this.transferReceived(tx, event);
+      case 'inventory.transfer_cancelled':
+        return this.transferCancelled(tx, event);
     }
   }
 
@@ -145,6 +150,27 @@ export class InventoryValuationPoster {
       sourceId: event.aggregateId,
       description: 'Stock transfer dispatched',
       postings: transferOutPostings(out.cents),
+    });
+  }
+
+  /**
+   * At the sender: the stock that came back, valued at the dispatch's cost, leaves
+   * transit, so a cancelled transfer leaves nothing in transit either.
+   */
+  private async transferCancelled(tx: Tx, event: ConsumedEvent): Promise<void> {
+    const back = await this.value(tx, {
+      sourceType: STOCK_TRANSFER_SOURCE,
+      sourceId: event.aggregateId,
+      movementType: 'return_to_stock',
+    });
+    if (!back) throw new Error(`stock transfer ${event.aggregateId} returned nothing`);
+    await this.post(tx, event, {
+      businessDate: back.businessDate,
+      entryType: 'transfer_cancel',
+      sourceType: STOCK_TRANSFER_SOURCE,
+      sourceId: event.aggregateId,
+      description: 'Stock transfer cancelled',
+      postings: transferCancelPostings(back.cents),
     });
   }
 

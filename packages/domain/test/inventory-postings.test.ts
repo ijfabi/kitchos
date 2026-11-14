@@ -4,6 +4,7 @@ import {
   consumptionPostings,
   countPostings,
   receiptPostings,
+  transferCancelPostings,
   transferInPostings,
   transferOutPostings,
   wastePostings,
@@ -79,6 +80,26 @@ describe('inventory postings', () => {
     );
     expect(() => transferInPostings({ receivedDeltaCents: 0, shortageCents: -1 })).toThrow(
       /cannot remove stock/,
+    );
+  });
+
+  it('a cancelled transfer returns its dispatched value from transit to inventory', () => {
+    expect(shape(transferCancelPostings(1_250))).toEqual([
+      ['inventory', 1_250],
+      ['stock_in_transit', -1_250],
+    ]);
+    expect(transferCancelPostings(0)).toEqual([]);
+    expect(() => transferCancelPostings(-1)).toThrow(/cannot remove stock/);
+    // A dispatch and its cancel leave nothing in transit and inventory where it was.
+    fc.assert(
+      fc.property(fc.integer({ min: 0, max: 10_000_000 }), (v) => {
+        const legs = [...transferOutPostings(-v), ...transferCancelPostings(v)];
+        const net = (acct: string) =>
+          legs
+            .filter((l) => l.account === acct)
+            .reduce((s, l) => s + l.debitCents - l.creditCents, 0);
+        return net('stock_in_transit') === 0 && net('inventory') === 0;
+      }),
     );
   });
 

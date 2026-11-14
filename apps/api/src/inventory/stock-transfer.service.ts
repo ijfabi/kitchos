@@ -22,7 +22,8 @@ interface TransferContext {
  * Stock transfers between restaurants of one organisation (ADR-0019). The sender
  * dispatches (transfer_out at its default location); the receiver records once what
  * arrived (transfer_in at its default location, valued at the dispatch's cost by the
- * stock ledger). Lock order: transfer → stock balances → event sequence.
+ * stock ledger), or the sender cancels it and the stock comes back (return_to_stock, also at
+ * the dispatch's cost; ADR-0020). Lock order: transfer → stock balances → event sequence.
  */
 @Injectable()
 export class StockTransferService {
@@ -187,13 +188,7 @@ export class StockTransferService {
             .forUpdate()
             .executeTakeFirst();
           if (!transfer) throw notFound('Transfer');
-          if (transfer.status !== 'in_transit') {
-            throw new ApiException(
-              409,
-              'TRANSFER_ALREADY_RECEIVED',
-              'This transfer has already been received',
-            );
-          }
+          assertInTransit(transfer.status);
           const sent = await tx
             .selectFrom('stock_transfer_lines')
             .select(['inventory_item_id', 'quantity_sent'])
@@ -290,12 +285,104 @@ export class StockTransferService {
     );
   }
 
+  /**
+   * The sender cancels a transfer that has not been received: every line's stock comes
+   * back to the shelf it left, valued at the dispatch's cost, and the transfer can then
+   * never be received. Racing a receipt, whichever locks the transfer first wins.
+   */
+  async cancel(
+    ctx: TransferContext,
+    transferId: string,
+    input: { reason: string },
+    idempotencyKey: string,
+  ): Promise<IdempotentResult<StockTransferView>> {
+    return withTenant(this.db, { orgId: ctx.orgId }, (tx) =>
+      idempotent(
+        tx,
+        ctx.orgId,
+        `transfer-cancel:${ctx.restaurantId}`,
+        idempotencyKey,
+        { transferId, ...input },
+        async () => {
+          const transfer = await tx
+            .selectFrom('stock_transfers')
+            .select(['id', 'status', 'version', 'from_location_id', 'to_restaurant_id'])
+            .where('id', '=', transferId)
+            .where('from_restaurant_id', '=', ctx.restaurantId)
+            .forUpdate()
+            .executeTakeFirst();
+          if (!transfer) throw notFound('Transfer');
+          assertInTransit(transfer.status);
+          const sent = await tx
+            .selectFrom('stock_transfer_lines')
+            .select(['inventory_item_id', 'quantity_sent'])
+            .where('stock_transfer_id', '=', transferId)
+            .orderBy('inventory_item_id')
+            .execute();
+          const updated = await tx
+            .updateTable('stock_transfers')
+            .set({
+              status: 'cancelled',
+              cancelled_by: ctx.userId,
+              cancelled_at: sql<Date>`now()`,
+              cancel_business_date: sql<string>`app.business_date(${ctx.restaurantId}::uuid, now())`,
+              cancel_reason: input.reason,
+              version: transfer.version + 1,
+            })
+            .where('id', '=', transferId)
+            .where('version', '=', transfer.version)
+            .returning('id')
+            .executeTakeFirst();
+          if (!updated) {
+            throw new ApiException(409, 'CONCURRENT_MODIFICATION', 'The transfer changed; retry');
+          }
+          await this.inventory.recordMovements(tx, {
+            orgId: ctx.orgId,
+            restaurantId: ctx.restaurantId,
+            locationId: transfer.from_location_id,
+            actor: { userId: ctx.userId },
+            notes: 'Transfer cancelled',
+            movements: sent.map((l) => ({
+              inventoryItemId: l.inventory_item_id,
+              movementType: 'return_to_stock',
+              quantityMilli: parseDecimalQty(l.quantity_sent),
+              sourceType: STOCK_TRANSFER_SOURCE,
+              sourceId: transferId,
+            })),
+          });
+          await audit(tx, {
+            orgId: ctx.orgId,
+            restaurantId: ctx.restaurantId,
+            actorUserId: ctx.userId,
+            action: 'inventory.transfer_cancel',
+            entityType: 'stock_transfer',
+            entityId: transferId,
+            reason: input.reason,
+            data: { toRestaurantId: transfer.to_restaurant_id, lines: sent.length },
+          });
+          await appendEvents(tx, [
+            {
+              orgId: ctx.orgId,
+              restaurantId: ctx.restaurantId,
+              aggregateType: 'stock',
+              aggregateId: transferId,
+              aggregateVersion: transfer.version + 1,
+              eventType: 'inventory.transfer_cancelled',
+              payload: { toRestaurantId: transfer.to_restaurant_id },
+            },
+          ]);
+          return { status: 200, body: await this.view(tx, transferId) };
+        },
+      ),
+    );
+  }
+
   /** Transfers sent from or to this restaurant, newest first. */
   async list(
     ctx: { orgId: string; restaurantId: string },
     q: {
       direction: 'incoming' | 'outgoing';
-      status?: 'in_transit' | 'received' | undefined;
+      status?: 'in_transit' | 'received' | 'cancelled' | undefined;
       limit: number;
     },
   ): Promise<StockTransferView[]> {
@@ -383,6 +470,7 @@ export class StockTransferService {
       .innerJoin('restaurants as d', 'd.id', 't.to_restaurant_id')
       .innerJoin('users as s', 's.id', 't.dispatched_by')
       .leftJoin('users as r', 'r.id', 't.received_by')
+      .leftJoin('users as c', 'c.id', 't.cancelled_by')
       .select([
         't.id',
         't.status',
@@ -398,6 +486,10 @@ export class StockTransferService {
         't.received_at',
         sql<string | null>`t.receive_business_date::text`.as('receive_business_date'),
         't.receive_notes',
+        'c.display_name as cancelled_by',
+        't.cancelled_at',
+        sql<string | null>`t.cancel_business_date::text`.as('cancel_business_date'),
+        't.cancel_reason',
       ])
       .where('t.id', '=', id)
       .executeTakeFirstOrThrow();
@@ -440,9 +532,14 @@ export class StockTransferService {
       receivedAt: t.received_at ? t.received_at.toISOString() : null,
       receiveBusinessDate: t.receive_business_date,
       receiveNotes: t.receive_notes,
+      cancelledBy: t.cancelled_by,
+      cancelledAt: t.cancelled_at ? t.cancelled_at.toISOString() : null,
+      cancelBusinessDate: t.cancel_business_date,
+      cancelReason: t.cancel_reason,
       sentCents,
       receivedCents,
       shortageCents: receivedCents === null ? null : sentCents - receivedCents,
+      returnedCents: t.status === 'cancelled' ? valueOf('return_to_stock') : null,
       lines: lines.map((l) => ({
         inventoryItemId: l.inventory_item_id,
         sku: l.sku,
@@ -455,5 +552,19 @@ export class StockTransferService {
             : formatDecimalQty(parseDecimalQty(l.quantity_received)),
       })),
     };
+  }
+}
+
+/** Only a transfer still in transit can be received or cancelled, and only once. */
+function assertInTransit(status: string): void {
+  if (status === 'received') {
+    throw new ApiException(
+      409,
+      'TRANSFER_ALREADY_RECEIVED',
+      'This transfer has already been received',
+    );
+  }
+  if (status === 'cancelled') {
+    throw new ApiException(409, 'TRANSFER_CANCELLED', 'This transfer has been cancelled');
   }
 }

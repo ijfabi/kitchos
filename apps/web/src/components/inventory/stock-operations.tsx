@@ -38,6 +38,7 @@ const MOVEMENT_LABEL: Record<string, string> = {
   count_adjustment: 'Count adjustment',
   transfer_out: 'Sent to another restaurant',
   transfer_in: 'Received by transfer',
+  return_to_stock: 'Returned to stock',
   correction: 'Correction',
 };
 

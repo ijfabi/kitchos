@@ -570,11 +570,17 @@ export const ReceiveTransferRequestSchema = z.object({
 });
 export type ReceiveTransferRequest = z.input<typeof ReceiveTransferRequestSchema>;
 
+/** The sender cancels a transfer that has not arrived; its stock comes back (ADR-0020). */
+export const CancelTransferRequestSchema = z.object({
+  reason: z.string().trim().min(3).max(500),
+});
+export type CancelTransferRequest = z.input<typeof CancelTransferRequestSchema>;
+
 const TransferPartySchema = z.object({ id: uuid, name: z.string() });
 
 export const StockTransferViewSchema = z.object({
   id: uuid,
-  status: z.enum(['in_transit', 'received']),
+  status: z.enum(['in_transit', 'received', 'cancelled']),
   from: TransferPartySchema,
   to: TransferPartySchema,
   dispatchedBy: z.string(),
@@ -585,11 +591,17 @@ export const StockTransferViewSchema = z.object({
   receivedAt: z.string().nullable(),
   receiveBusinessDate: z.string().nullable(),
   receiveNotes: z.string().nullable(),
+  cancelledBy: z.string().nullable(),
+  cancelledAt: z.string().nullable(),
+  cancelBusinessDate: z.string().nullable(),
+  cancelReason: z.string().nullable(),
   /** Value that left the sender, at the dispatch's recorded cost. */
   sentCents: cents,
-  /** Value that arrived and was short; null until received. */
+  /** Value that arrived and was short; null unless received. */
   receivedCents: cents.nullable(),
   shortageCents: cents.nullable(),
+  /** Value returned to the sender's stock; null unless cancelled. */
+  returnedCents: cents.nullable(),
   lines: z.array(
     z.object({
       inventoryItemId: uuid,
@@ -739,6 +751,12 @@ export const LedgerReconciliationSchema = z.object({
   /** Σ value recorded on that day's stock movements vs the journal's net change in Inventory. */
   stockMovementsValueCents: cents,
   journalInventoryCents: cents,
+  /**
+   * Stock in transit (ADR-0020): transfers this restaurant dispatched, less those it cancelled, less
+   * the transfers it received (at their dispatched value), vs the journal's net change in the account.
+   */
+  transitChangeCents: cents,
+  journalStockInTransitCents: cents,
   /** Card payments less card refunds vs the net change in Card clearing from receipts and refunds. */
   cardNetCents: cents,
   journalCardClearingCents: cents,

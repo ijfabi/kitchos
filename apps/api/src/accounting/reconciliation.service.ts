@@ -80,6 +80,31 @@ export class ReconciliationService {
       .where('a.system_key', '=', 'inventory')
       .where('e.posted_late_from', 'is', null)
       .executeTakeFirstOrThrow();
+    // Stock in transit (ADR-0020): what this restaurant dispatched that day, less what it took back
+    // by cancelling, less the dispatched value of transfers it received that day.
+    const { rows: transitRows } = await sql<{ expected: string; journal: string }>`
+      select
+        (select coalesce(-sum(m.value_cents), 0)
+           from stock_movements m
+          where m.restaurant_id = ${restaurantId}::uuid and m.business_date = ${day}::date
+            and m.source_type = 'stock_transfer'
+            and m.movement_type in ('transfer_out', 'return_to_stock')
+            and m.value_cents is not null)
+        - (select coalesce(-sum(m.value_cents), 0)
+             from stock_transfers t
+             join stock_movements m on m.source_type = 'stock_transfer' and m.source_id = t.id
+                                   and m.movement_type = 'transfer_out'
+            where t.to_restaurant_id = ${restaurantId}::uuid and t.status = 'received'
+              and t.receive_business_date = ${day}::date) as expected,
+        (select coalesce(sum(l.debit_cents - l.credit_cents), 0)
+           from journal_lines l
+           join journal_entries e on e.id = l.entry_id
+           join accounts a on a.id = l.account_id
+          where e.restaurant_id = ${restaurantId}::uuid and e.business_date = ${day}::date
+            and a.system_key = 'stock_in_transit' and e.posted_late_from is null) as journal`.execute(
+      tx,
+    );
+    const transit = transitRows[0]!;
     const drawers = await tx
       .selectFrom('drawer_sessions')
       .select((x) => x.fn.coalesce(x.fn.sum<number>('variance_cents'), sql<number>`0`).as('cents'))
@@ -139,6 +164,8 @@ export class ReconciliationService {
       ),
       stockMovementsValueCents: num(stock.cents),
       journalInventoryCents: num(inventory.net),
+      transitChangeCents: num(transit.expected),
+      journalStockInTransitCents: num(transit.journal),
       // Both tenders credit Customer deposits, so the totals above cannot tell them apart.
       cardNetCents: num(payments.card) - num(refunds.card),
       journalCardClearingCents: -(
@@ -167,6 +194,7 @@ export class ReconciliationService {
         result.completedOrdersGstCents === result.journalGstCents &&
         result.refundsCents === result.journalRefundsCents &&
         result.stockMovementsValueCents === result.journalInventoryCents &&
+        result.transitChangeCents === result.journalStockInTransitCents &&
         result.cardNetCents === result.journalCardClearingCents &&
         result.cashNetCents === result.journalCashOnHandCents &&
         result.cashRoundingCents === result.journalCashRoundingCents &&
