@@ -1013,6 +1013,7 @@ export class StockOperationsService {
       .leftJoin('stations as s', 's.id', 'w.station_id')
       .leftJoin('inventory_items as i', 'i.id', 'w.inventory_item_id')
       .leftJoin('products as p', 'p.id', 'w.product_id')
+      .leftJoin('order_lines as ol', 'ol.id', 'w.order_line_id')
       .select([
         'w.id',
         'w.kind',
@@ -1031,6 +1032,7 @@ export class StockOperationsService {
         's.name as station_name',
         'i.name as item_name',
         'p.name as product_name',
+        'ol.order_id',
       ])
       .where('w.id', '=', id)
       .executeTakeFirstOrThrow();
@@ -1055,6 +1057,7 @@ export class StockOperationsService {
       reviewedBy: w.reviewed_by,
       reviewReason: w.review_reason,
       stationName: w.station_name,
+      orderId: w.order_id,
       notes: w.notes,
       businessDate: w.business_date,
       occurredAt: w.occurred_at.toISOString(),

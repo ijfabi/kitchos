@@ -141,7 +141,7 @@ function Expo({ session }: { session: StaffSession }) {
               ) : (
                 <ul className="space-y-3">
                   {col.items.map((o) => (
-                    <li key={o.id}>
+                    <li key={o.id} data-order-id={o.id}>
                       <Card className={clsx('p-4', o.status === 'ready' && 'border-ok/40')}>
                         <div className="flex items-start justify-between gap-3">
                           <div>

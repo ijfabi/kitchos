@@ -128,7 +128,7 @@ function ReviewRow({
   const ok = reason.trim().length >= 3 && !review.isPending;
 
   return (
-    <li data-testid="waste-record" data-status={w.status}>
+    <li data-testid="waste-record" data-status={w.status} data-order-id={w.orderId ?? undefined}>
       <Card className="p-3">
         <WasteSummaryLine w={w} />
         {canReview && open && mine && (

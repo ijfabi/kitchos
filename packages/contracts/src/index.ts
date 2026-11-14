@@ -444,6 +444,8 @@ export const WasteRecordViewSchema = z.object({
   reviewedBy: z.string().nullable(),
   reviewReason: z.string().nullable(),
   stationName: z.string().nullable(),
+  /** The order the wasted item came from, when it was recorded against an order line. */
+  orderId: uuid.nullable(),
   notes: z.string().nullable(),
   businessDate: z.string(),
   occurredAt: z.string(),

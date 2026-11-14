@@ -61,7 +61,7 @@ test('a manager refunds one item at its price, it counts as waste, and replaces 
   await page.getByRole('button', { name: 'Sign in' }).click();
   await page.getByRole('link', { name: 'Orders & refunds' }).first().click();
 
-  const card = page.locator(`[data-testid="order-card"][data-order-number="${order.orderNumber}"]`);
+  const card = page.locator(`[data-testid="order-card"][data-order-id="${order.id}"]`);
   await card.getByRole('button', { name: 'Refund', exact: true }).click();
   const form = card.getByRole('form', { name: /Refund order/ });
   // By item is the default: one of three burgers at its share of the line ($7.90 each).
@@ -83,7 +83,7 @@ test('a manager refunds one item at its price, it counts as waste, and replaces 
   await page.getByRole('button', { name: 'Waste log' }).click();
   const records = page
     .getByRole('region', { name: 'Recent waste' })
-    .getByTestId('waste-record')
+    .locator(`[data-testid="waste-record"][data-order-id="${order.id}"]`)
     .filter({ hasText: /Cheeseburger/ });
   await expect(records.filter({ hasText: `Order #${order.orderNumber} refunded` })).toHaveCount(1);
   await expect(records.filter({ hasText: 'Remade for the same order' }).first()).toBeVisible();

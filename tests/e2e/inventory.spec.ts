@@ -43,7 +43,7 @@ test('waste from an order is capped by the line, and prepared food is recorded a
     },
   });
   expect(placed.status()).toBe(201);
-  const order = (await placed.json()) as { orderNumber: number; publicToken: string };
+  const order = (await placed.json()) as { id: string; publicToken: string };
   const paid = await request.post(`${api}/orders/${order.publicToken}/payments`, {
     headers: { 'Idempotency-Key': crypto.randomUUID() },
     data: { method: 'card', paymentToken: 'tok_sandbox_approve' },
@@ -57,9 +57,9 @@ test('waste from an order is capped by the line, and prepared food is recorded a
 
   const wasteLine = async () => {
     const orderSelect = form.getByLabel(/^Order/); // the label's text includes its options
-    const option = orderSelect.locator('option', { hasText: `#${order.orderNumber} ` });
-    await expect(option).toHaveCount(1);
-    await orderSelect.selectOption({ value: (await option.getAttribute('value'))! });
+    // By id: order numbers restart each business day, so a number can repeat in the list.
+    await expect(orderSelect.locator(`option[value="${order.id}"]`)).toHaveCount(1);
+    await orderSelect.selectOption({ value: order.id });
     await form.getByLabel('Item on the order').selectOption({ label: '1 × Cheeseburger' });
     await form.getByLabel('Portions').fill('1');
     await form.getByLabel('Reason').selectOption({ label: 'Dropped' });

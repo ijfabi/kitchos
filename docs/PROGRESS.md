@@ -54,19 +54,20 @@ different time zones, and a transfer in transit when either restaurant is deacti
 
 ### Tests executed (14 November 2026, Windows 11, Docker Desktop)
 
-| Suite                      | Result                                                            |
-| -------------------------- | ----------------------------------------------------------------- |
-| `@kitchos/domain`          | 63/63 passed                                                      |
-| `@kitchos/api` integration | 507/507 passed (33 files, shuffled, seed `1794652460414`)         |
-| Transfer suites alone      | 8 + 17 + 7 passed                                                 |
-| Playwright (15 journeys)   | 12 passed, 3 failed on reused local data (below); transfer passed |
-| ESLint / Prettier / tsc    | clean                                                             |
+| Suite                      | Result                                                      |
+| -------------------------- | ----------------------------------------------------------- |
+| `@kitchos/domain`          | 63/63 passed                                                |
+| `@kitchos/api` integration | 507/507 passed (33 files, shuffled, seed `1794652460414`)   |
+| Transfer suites alone      | 8 + 17 + 7 passed                                           |
+| Playwright (15 journeys)   | 15/15 passed after `pnpm db:reset`; 12/15 before it (below) |
+| ESLint / Prettier / tsc    | clean                                                       |
 
 The three Playwright failures (the waste journey in `inventory.spec.ts`, and the order and refund
 journeys in `order-journey.spec.ts`) each found two orders with the same daily number. The local
 database held journey orders from 12 November, for example a cancelled `#1` beside the new `#1`. They
 do not touch transfer code. They were not rerun on a fresh database before this commit, because
-`pnpm db:reset` erases the local data; that rerun follows the commit. `next build` was not run this time.
+`pnpm db:reset` erases the local data; after the commit
+(`60b9180`), a reset and rerun passed all 15. `next build` was not run this time.
 
 ### Not done
 

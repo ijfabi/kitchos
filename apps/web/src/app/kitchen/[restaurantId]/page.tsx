@@ -189,6 +189,7 @@ function KitchenDisplay({ session }: { session: StaffSession }) {
               return (
                 <li
                   key={first.orderId}
+                  data-order-id={first.orderId}
                   className={clsx(
                     'flex flex-col overflow-hidden rounded-xl border-2 bg-ops-panel',
                     age >= LATE_AFTER

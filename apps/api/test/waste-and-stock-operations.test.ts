@@ -144,6 +144,18 @@ describe('waste, goods receipts and physical counts', () => {
     expect(rec.lines.every((l) => l.treatment === 'already_consumed')).toBe(true);
     expect(rec.costCents).toBe(204); // 45 + 110 + 18 + 2 + 7 + 18 + 4 at standard cost
     expect(await movementsFor('waste_record', rec.id)).toHaveLength(0);
+    // The record names its order, also when listed; waste not from an order names none.
+    expect(rec.orderId).toBe(order.id);
+    const listed = (
+      await h.http
+        .get(`/v1/restaurants/${centralId}/inventory/waste`)
+        .set(bearer(manager))
+        .expect(200)
+    ).body as WasteRecordView[];
+    expect(listed.find((w) => w.id === rec.id)?.orderId).toBe(order.id);
+    expect(listed.filter((w) => w.kind === 'raw_ingredient').every((w) => w.orderId === null)).toBe(
+      true,
+    );
     expect(await balance(h, CENTRAL, 'PATTY-BEEF')).toEqual(pattyAfterCooking);
   });
 

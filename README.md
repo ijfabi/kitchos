@@ -127,8 +127,8 @@ pnpm --filter @kitchos/api test      # integration tests in a throwaway PostgreS
 pnpm test:e2e                        # Playwright journeys against the local seeded database
 ```
 
-Run `pnpm db:reset` before the Playwright journeys if the local database has been used on earlier
-days. Some journeys find orders by their daily number, which repeats across days.
+The journeys find orders on staff screens by order id, so they run on a fresh or a reused local
+database alike.
 
 CI runs all of these on every push to `main` and every pull request, plus a check that the
 generated database types match the migrations. Each milestone is also reviewed by an independent

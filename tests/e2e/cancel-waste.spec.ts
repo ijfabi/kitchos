@@ -59,10 +59,7 @@ test('cancelling a cooked order records its food as waste, with the count the ma
   await page.getByRole('button', { name: 'Sign in' }).click();
   await page.getByRole('link', { name: 'Expo & handoff' }).first().click();
 
-  const card = page
-    .locator('li')
-    .filter({ hasText: `#${order.orderNumber}` })
-    .first();
+  const card = page.locator(`li[data-order-id="${order.id}"]`);
   await card.getByRole('button', { name: 'Cancel' }).click();
   const form = page.getByRole('form', { name: `Cancel order ${order.orderNumber}` });
   await form.getByLabel('Cancel reason').fill('Customer left before pickup');
@@ -79,7 +76,7 @@ test('cancelling a cooked order records its food as waste, with the count the ma
   await page.getByRole('button', { name: 'Waste log' }).click();
   const record = page
     .getByRole('region', { name: 'Recent waste' })
-    .getByTestId('waste-record')
+    .locator(`[data-testid="waste-record"][data-order-id="${order.id}"]`)
     .filter({ hasText: `Order #${order.orderNumber} cancelled` });
   await expect(record).toHaveCount(1);
   await expect(record).toContainText('1 × Cheeseburger');

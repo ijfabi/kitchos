@@ -212,7 +212,7 @@ function OrderRow({
   });
 
   return (
-    <div data-testid="order-card" data-order-number={order.orderNumber}>
+    <div data-testid="order-card" data-order-id={order.id} data-order-number={order.orderNumber}>
       <Card className="p-4">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div>

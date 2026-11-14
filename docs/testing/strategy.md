@@ -13,18 +13,19 @@
 
 Counted on 14 November 2026, including the Milestone 19 files.
 
-| Suite                      | Files | Tests | Last result                                                                         |
-| -------------------------- | ----- | ----- | ----------------------------------------------------------------------------------- |
-| `@kitchos/domain`          | 12    | 63    | 63 passed                                                                           |
-| `@kitchos/api` integration | 33    | 507   | 507 passed (one full shuffled run, seed `1794652460414`)                            |
-| Playwright journeys        | 10    | 15    | 12 passed, 3 failed on a reused local database (see below); the transfer one passed |
+| Suite                      | Files | Tests | Last result                                                                                     |
+| -------------------------- | ----- | ----- | ----------------------------------------------------------------------------------------------- |
+| `@kitchos/domain`          | 12    | 63    | 63 passed                                                                                       |
+| `@kitchos/api` integration | 33    | 507   | 507 passed (one full shuffled run, seed `1794652460414`)                                        |
+| Playwright journeys        | 10    | 15    | 15 passed after `pnpm db:reset`, and again on a reused database once orders were selected by id |
 
-The three Playwright failures on 14 November (`inventory.spec.ts` waste journey and two in
-`order-journey.spec.ts`) were caused by test data, not the code under test. Order numbers restart
-each business day, the local database held journey orders from earlier days, and the tests pick
-orders by number, so each one found two orders with the same number. CI runs the journeys on a fresh
-database. Locally, `pnpm db:reset` before `pnpm test:e2e` avoids it. Making those tests select
-orders by id would remove the dependency.
+Earlier on 14 November, on a local database reused across days, three journeys failed (the
+`inventory.spec.ts` waste journey and two in `order-journey.spec.ts`). Order numbers restart each
+business day, and those tests picked orders by number, so each found two orders with the same
+number. The journeys now find orders on staff screens by id: order cards, kitchen tickets, expo
+cards and waste records carry `data-order-id`, and waste records return `orderId`. All of them
+then passed on the reused database too. The public pickup board is still matched by number; it lists
+only the current business day, where numbers are unique.
 
 Integration test files come in pairs for most features: a file written with the feature, and an
 `-adversarial` file written independently to try to break it.

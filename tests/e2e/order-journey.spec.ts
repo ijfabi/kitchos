@@ -28,6 +28,12 @@ test('customer order flows through the kitchen to handoff, live', async ({ brows
     await customer.getByLabel('Order progress').locator('..').locator('p.text-6xl').textContent()
   )?.trim();
   expect(orderNumber).toMatch(/^\d+$/);
+  // Staff screens are matched by order id: order numbers restart each business day.
+  const publicToken = customer.url().split('/').pop()!;
+  const tracked = await customer.request.get(
+    `http://localhost:4000/v1/public/orders/${publicToken}`,
+  );
+  const orderId = ((await tracked.json()) as { id: string }).id;
   await customer.screenshot({
     path: 'test-results/screens/02-customer-tracking.png',
     fullPage: true,
@@ -42,9 +48,7 @@ test('customer order flows through the kitchen to handoff, live', async ({ brows
   await crew.getByRole('button', { name: 'Sign in' }).click();
   await crew.getByRole('link', { name: 'Kitchen display' }).click();
 
-  const ticket = crew
-    .locator('li', { has: crew.getByText(`#${orderNumber}`, { exact: true }) })
-    .first();
+  const ticket = crew.locator(`li[data-order-id="${orderId}"]`);
   await expect(ticket).toBeVisible();
   await expect(ticket.getByText('Extra cheese')).toBeVisible();
   await expect(ticket.getByRole('button', { name: 'Done' })).toHaveCount(3);
@@ -75,9 +79,7 @@ test('customer order flows through the kitchen to handoff, live', async ({ brows
   // ---- Expo hands the order off exactly once
   await crew.goto('/staff');
   await crew.getByRole('link', { name: 'Expo & handoff' }).first().click();
-  const expoCard = crew
-    .locator('li', { has: crew.getByText(`#${orderNumber}`, { exact: true }) })
-    .first();
+  const expoCard = crew.locator(`li[data-order-id="${orderId}"]`);
   await expect(expoCard).toBeVisible();
   await crew.screenshot({ path: 'test-results/screens/05-expo.png', fullPage: true });
   await expoCard.getByRole('button', { name: 'Hand off' }).click();
@@ -130,8 +132,8 @@ test('a manager refunds part of a finished order and the books show it, still re
     .filter({ has: page.getByRole('button', { name: 'Refund', exact: true }) })
     .filter({ hasNotText: 'card refund' })
     .first();
-  const orderNumber = await card.getAttribute('data-order-number');
-  const target = page.locator(`[data-testid="order-card"][data-order-number="${orderNumber}"]`);
+  const orderId = await card.getAttribute('data-order-id');
+  const target = page.locator(`[data-testid="order-card"][data-order-id="${orderId}"]`);
   await target.getByRole('button', { name: 'Refund', exact: true }).click();
   const form = target.getByRole('form', { name: /Refund order/ });
   // A goodwill amount, not tied to items.
